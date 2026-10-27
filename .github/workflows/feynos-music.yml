@@ -143,6 +143,7 @@ jobs:
               implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
               implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
               implementation("io.coil-kt:coil-compose:2.7.0")
+              implementation("com.google.android.gms:play-services-nearby:19.3.0")
           }
           FEYNOS_EOF_004
           cat > 'app/src/main/AndroidManifest.xml' <<'FEYNOS_EOF_005'
@@ -156,6 +157,18 @@ jobs:
               <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
               <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
               <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
+              <!-- Jam: phones find and talk to each other over Bluetooth / Wi-Fi Direct -->
+              <uses-permission android:name="android.permission.BLUETOOTH" />
+              <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+              <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
+              <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
+              <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+              <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+              <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+              <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+              <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+              <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES" />
 
               <application
                   android:name=".App"
@@ -1749,7 +1762,7 @@ jobs:
 
       - name: Write player, workers and app core
         run: |
-          mkdir -p "app/src/main/java/com/feynos/music" "app/src/main/java/com/feynos/music/player" "app/src/main/java/com/feynos/music/update" "app/src/main/java/com/feynos/music/work"
+          mkdir -p "app/src/main/java/com/feynos/music" "app/src/main/java/com/feynos/music/jam" "app/src/main/java/com/feynos/music/player" "app/src/main/java/com/feynos/music/update" "app/src/main/java/com/feynos/music/work"
           cat > 'app/src/main/java/com/feynos/music/App.kt' <<'FEYNOS_EOF_023'
           package com.feynos.music
 
@@ -1788,6 +1801,7 @@ jobs:
           import com.feynos.music.data.Song
           import com.feynos.music.data.SubsonicClient
           import com.feynos.music.data.TrackMatcher
+          import com.feynos.music.jam.JamManager
           import com.feynos.music.player.MediaCache
           import com.feynos.music.player.PlayerController
           import com.feynos.music.update.Updater
@@ -1822,6 +1836,7 @@ jobs:
               val mixGen = MixGenerator(this)
               val updater = Updater(app, http)
               val covers = CoverArtFinder(this)
+              val jam = JamManager(this)
 
               val messages = MutableSharedFlow<String>(extraBufferCapacity = 16)
               val starOverrides = MutableStateFlow<Map<String, Boolean>>(emptyMap())
@@ -1872,6 +1887,7 @@ jobs:
               }
 
               suspend fun logout() {
+                  if (jam.state.value.role != com.feynos.music.jam.JamRole.NONE) jam.leave()
                   withContext(Dispatchers.Main) { player.stopAndClear() }
                   File(app.filesDir, "queue.json").delete()
                   settings.update { AppSettings(lbToken = it.lbToken, lbUser = it.lbUser) }
@@ -1897,6 +1913,34 @@ jobs:
 
               fun coverUrl(id: String?, size: Int = 500): String? =
                   id?.takeIf { it.isNotBlank() && settings.current.loggedIn }?.let { api.coverUrl(it, size) }
+
+              /** Tells Navidrome / ListenBrainz what's playing now. */
+              fun sendNowPlaying(s: Song) {
+                  val cfg = settings.current
+                  scope.launch(Dispatchers.IO) {
+                      if (cfg.scrobbleNavidrome) runCatching { api.scrobble(s.id, System.currentTimeMillis(), false) }
+                      if (cfg.scrobbleLb && cfg.lbToken.isNotBlank()) {
+                          runCatching { lb.submitRaw(lb.listenBody("playing_now", s, null)) }
+                      }
+                  }
+              }
+
+              /** Records a finished listen: local history, Navidrome play count and ListenBrainz. */
+              fun recordListen(s: Song, at: Long) {
+                  val cfg = settings.current
+                  scope.launch(Dispatchers.IO) {
+                      runCatching { db.addPlay(s, at) }
+                      if (cfg.scrobbleNavidrome) runCatching { api.scrobble(s.id, at, true) }
+                      if (cfg.scrobbleLb && cfg.lbToken.isNotBlank()) {
+                          val body = lb.listenBody("single", s, at / 1000)
+                          val ok = runCatching { lb.submitRaw(body) }.getOrDefault(false)
+                          if (!ok) {
+                              db.queueLb(body)
+                              Workers.flushListenBrainz(app)
+                          }
+                      }
+                  }
+              }
 
               /** Cover URL, preferring art found by the cover-art finder. */
               fun artUrl(coverId: String?, albumId: String?, size: Int = 500): String? =
@@ -2063,7 +2107,439 @@ jobs:
               }
           }
           FEYNOS_EOF_025
-          cat > 'app/src/main/java/com/feynos/music/player/MediaItems.kt' <<'FEYNOS_EOF_026'
+          cat > 'app/src/main/java/com/feynos/music/jam/JamManager.kt' <<'FEYNOS_EOF_026'
+          package com.feynos.music.jam
+
+          import android.os.Build
+          import com.feynos.music.Graph
+          import com.feynos.music.data.Song
+          import com.feynos.music.player.PlayerState
+          import com.feynos.music.util.AppJson
+          import com.feynos.music.util.decodeAs
+          import com.feynos.music.util.decodeListAs
+          import com.feynos.music.util.get
+          import com.feynos.music.util.list
+          import com.feynos.music.util.lng
+          import com.feynos.music.util.obj
+          import com.feynos.music.util.str
+          import com.google.android.gms.nearby.Nearby
+          import com.google.android.gms.nearby.connection.AdvertisingOptions
+          import com.google.android.gms.nearby.connection.ConnectionInfo
+          import com.google.android.gms.nearby.connection.ConnectionLifecycleCallback
+          import com.google.android.gms.nearby.connection.ConnectionResolution
+          import com.google.android.gms.nearby.connection.ConnectionsClient
+          import com.google.android.gms.nearby.connection.ConnectionsStatusCodes
+          import com.google.android.gms.nearby.connection.DiscoveredEndpointInfo
+          import com.google.android.gms.nearby.connection.DiscoveryOptions
+          import com.google.android.gms.nearby.connection.EndpointDiscoveryCallback
+          import com.google.android.gms.nearby.connection.Payload
+          import com.google.android.gms.nearby.connection.PayloadCallback
+          import com.google.android.gms.nearby.connection.PayloadTransferUpdate
+          import com.google.android.gms.nearby.connection.Strategy
+          import kotlinx.coroutines.Dispatchers
+          import kotlinx.coroutines.Job
+          import kotlinx.coroutines.delay
+          import kotlinx.coroutines.flow.MutableStateFlow
+          import kotlinx.coroutines.flow.StateFlow
+          import kotlinx.coroutines.flow.asStateFlow
+          import kotlinx.coroutines.flow.update
+          import kotlinx.coroutines.isActive
+          import kotlinx.coroutines.launch
+          import kotlinx.serialization.json.JsonElement
+          import kotlinx.serialization.json.JsonObject
+          import kotlinx.serialization.json.add
+          import kotlinx.serialization.json.addJsonObject
+          import kotlinx.serialization.json.buildJsonObject
+          import kotlinx.serialization.json.encodeToJsonElement
+          import kotlinx.serialization.json.put
+          import kotlinx.serialization.json.putJsonArray
+          import kotlinx.serialization.json.putJsonObject
+
+          enum class JamRole { NONE, HOST, GUEST }
+
+          data class JamEndpoint(val id: String, val name: String)
+
+          data class JamState(
+              val role: JamRole = JamRole.NONE,
+              val searching: Boolean = false,
+              val connectingTo: String? = null,
+              val hostName: String = "",
+              val members: List<String> = emptyList(),
+              val found: List<JamEndpoint> = emptyList(),
+              /** songId -> name of the person who added it */
+              val addedBy: Map<String, String> = emptyMap(),
+              val error: String? = null,
+          )
+
+          /**
+           * A "jam": one phone (the host, connected to the stereo) plays; nearby phones join over
+           * Bluetooth / Wi-Fi Direct and get full control of the shared queue. Everyone uses the same
+           * Navidrome server, so a song id means the same song on every phone.
+           */
+          class JamManager(private val g: Graph) {
+              companion object {
+                  const val SERVICE_ID = "com.feynos.music.jam"
+                  private const val MAX_BYTES = 30_000
+                  private const val CHUNK = 40
+              }
+
+              private val client: ConnectionsClient by lazy { Nearby.getConnectionsClient(g.app) }
+              private val _state = MutableStateFlow(JamState())
+              val state: StateFlow<JamState> = _state.asStateFlow()
+
+              val isHost: Boolean get() = _state.value.role == JamRole.HOST
+              val isGuest: Boolean get() = _state.value.role == JamRole.GUEST
+
+              private val members = LinkedHashMap<String, String>() // endpointId -> name (host side)
+              private val pendingNames = HashMap<String, String>()
+              private val found = LinkedHashMap<String, String>() // endpointId -> name (guest side)
+              private val addedBy = LinkedHashMap<String, Pair<String?, String>>() // songId -> (guest endpoint or null, name)
+              private val cursors = HashMap<String, Int>()
+              private var hostEndpoint: String? = null
+              private var broadcastJob: Job? = null
+              private var lastSig = ""
+              private var lastSent = 0L
+
+              private fun myName(): String = g.settings.current.username.ifBlank { Build.MODEL ?: "Phone" }
+
+              // ---------------- Nearby callbacks (all delivered on the main thread) ----------------
+
+              private val payloads = object : PayloadCallback() {
+                  override fun onPayloadReceived(endpointId: String, payload: Payload) {
+                      val bytes = payload.asBytes() ?: return
+                      val msg = runCatching { AppJson.parseToJsonElement(String(bytes, Charsets.UTF_8)) }.getOrNull() ?: return
+                      when {
+                          isHost -> onHostMessage(endpointId, msg)
+                          isGuest -> onGuestMessage(msg)
+                      }
+                  }
+
+                  override fun onPayloadTransferUpdate(endpointId: String, update: PayloadTransferUpdate) {}
+              }
+
+              private val lifecycle = object : ConnectionLifecycleCallback() {
+                  override fun onConnectionInitiated(endpointId: String, info: ConnectionInfo) {
+                      pendingNames[endpointId] = info.endpointName
+                      client.acceptConnection(endpointId, payloads)
+                  }
+
+                  override fun onConnectionResult(endpointId: String, result: ConnectionResolution) {
+                      val ok = result.status.statusCode == ConnectionsStatusCodes.STATUS_OK
+                      if (isHost) {
+                          if (ok) {
+                              val name = pendingNames[endpointId] ?: "Guest"
+                              members[endpointId] = name
+                              publish()
+                              g.toast("$name joined the jam")
+                              broadcast(force = true)
+                          }
+                      } else if (_state.value.connectingTo == endpointId) {
+                          if (ok) {
+                              hostEndpoint = endpointId
+                              runCatching { client.stopDiscovery() }
+                              g.player.pauseLocal()
+                              _state.update {
+                                  it.copy(
+                                      role = JamRole.GUEST, searching = false, connectingTo = null, error = null,
+                                      hostName = (found[endpointId] ?: "").removeSuffix("'s jam"),
+                                  )
+                              }
+                              g.toast("Joined the jam")
+                          } else {
+                              _state.update { it.copy(connectingTo = null, error = "Couldn't join (code ${result.status.statusCode}). Try again.") }
+                          }
+                      }
+                  }
+
+                  override fun onDisconnected(endpointId: String) {
+                      if (isHost) {
+                          val name = members.remove(endpointId)
+                          cursors.remove(endpointId)
+                          publish()
+                          if (name != null) g.toast("$name left the jam")
+                      } else if (isGuest && endpointId == hostEndpoint) {
+                          endLocal()
+                          g.toast("The jam has ended")
+                      }
+                  }
+              }
+
+              private val discovery = object : EndpointDiscoveryCallback() {
+                  override fun onEndpointFound(endpointId: String, info: DiscoveredEndpointInfo) {
+                      if (info.serviceId != SERVICE_ID) return
+                      found[endpointId] = info.endpointName
+                      publishFound()
+                  }
+
+                  override fun onEndpointLost(endpointId: String) {
+                      found.remove(endpointId)
+                      publishFound()
+                  }
+              }
+
+              private fun publishFound() {
+                  _state.update { s -> s.copy(found = found.map { (id, name) -> JamEndpoint(id, name) }) }
+              }
+
+              private fun publish() {
+                  _state.update {
+                      it.copy(members = listOf(myName()) + members.values, addedBy = addedBy.mapValues { e -> e.value.second })
+                  }
+              }
+
+              // ---------------- Starting / joining / leaving ----------------
+
+              fun startHosting() {
+                  if (_state.value.role != JamRole.NONE) return
+                  members.clear(); addedBy.clear(); cursors.clear(); pendingNames.clear()
+                  _state.value = JamState(role = JamRole.HOST, hostName = myName(), members = listOf(myName()))
+                  client.startAdvertising(
+                      "${myName()}'s jam", SERVICE_ID, lifecycle,
+                      AdvertisingOptions.Builder().setStrategy(Strategy.P2P_STAR).build(),
+                  ).addOnFailureListener { e ->
+                      stopBroadcasting()
+                      _state.value = JamState(error = "Couldn't start the jam: ${e.message}")
+                  }
+                  startBroadcasting()
+              }
+
+              fun startSearching() {
+                  if (_state.value.role != JamRole.NONE) return
+                  found.clear()
+                  _state.value = JamState(searching = true)
+                  client.startDiscovery(SERVICE_ID, discovery, DiscoveryOptions.Builder().setStrategy(Strategy.P2P_STAR).build())
+                      .addOnFailureListener { e -> _state.update { it.copy(searching = false, error = "Couldn't search: ${e.message}") } }
+              }
+
+              fun stopSearching() {
+                  runCatching { client.stopDiscovery() }
+                  _state.update { it.copy(searching = false, found = emptyList()) }
+              }
+
+              fun join(endpoint: JamEndpoint) {
+                  _state.update { it.copy(connectingTo = endpoint.id, error = null) }
+                  client.requestConnection(myName(), endpoint.id, lifecycle).addOnFailureListener { e ->
+                      _state.update { it.copy(connectingTo = null, error = "Couldn't join: ${e.message}") }
+                  }
+              }
+
+              /** Host: ends the jam for everyone. Guest: leaves it. */
+              fun leave() {
+                  if (isHost) members.keys.toList().takeIf { it.isNotEmpty() }?.let { send(it, buildJsonObject { put("t", "end") }) }
+                  val wasHost = isHost
+                  g.scope.launch(Dispatchers.Main) {
+                      if (wasHost) delay(300) // let the "ended" message go out
+                      endLocal()
+                  }
+              }
+
+              private fun endLocal() {
+                  val wasGuest = isGuest
+                  stopBroadcasting()
+                  runCatching { client.stopAdvertising() }
+                  runCatching { client.stopDiscovery() }
+                  runCatching { client.stopAllEndpoints() }
+                  members.clear(); found.clear(); addedBy.clear(); cursors.clear(); pendingNames.clear()
+                  hostEndpoint = null
+                  _state.value = JamState()
+                  if (wasGuest) g.player.clearRemote()
+              }
+
+              // ---------------- Messages ----------------
+
+              private fun send(to: List<String>, msg: JsonObject) {
+                  if (to.isEmpty()) return
+                  runCatching { client.sendPayload(to, Payload.fromBytes(msg.toString().toByteArray(Charsets.UTF_8))) }
+              }
+
+              private fun compact(s: Song) = s.copy(starred = null, playCount = null, musicBrainzId = null, bitRate = null)
+
+              // ---- host side ----
+
+              /** Records who added songs, so the queue can show it. Host's own adds pass null. */
+              fun noteAdded(songs: List<Song>, endpoint: String? = null, name: String = myName()) {
+                  if (!isHost) return
+                  songs.forEach { addedBy[it.id] = endpoint to name }
+                  while (addedBy.size > 3000) addedBy.remove(addedBy.keys.first())
+                  publish()
+              }
+
+              /** Endpoint of the guest who added this song, if they're still in the jam. */
+              fun creditFor(songId: String): String? = if (!isHost) null else addedBy[songId]?.first?.takeIf { it in members }
+
+              fun sendListen(endpoint: String, song: Song, at: Long) = send(listOf(endpoint), buildJsonObject {
+                  put("t", "listen")
+                  put("song", AppJson.encodeToJsonElement(compact(song)))
+                  put("at", at)
+              })
+
+              fun sendNowPlaying(endpoint: String, song: Song) = send(listOf(endpoint), buildJsonObject {
+                  put("t", "nowPlaying")
+                  put("song", AppJson.encodeToJsonElement(compact(song)))
+              })
+
+              private fun onHostMessage(endpoint: String, m: JsonElement) {
+                  if (m["t"].str != "cmd") return
+                  val p = g.player
+                  val name = members[endpoint] ?: "Guest"
+                  val songs = m["songs"].decodeListAs<Song>()
+                  val a = (m["a"].lng ?: 0L).toInt()
+                  val b = (m["b"].lng ?: 0L).toInt()
+                  when (m["op"].str) {
+                      "toggle" -> p.toggle()
+                      "next" -> p.next()
+                      "previous" -> p.previous()
+                      "seek" -> p.seekTo(m["ms"].lng ?: 0L)
+                      "skipTo" -> p.skipTo(a)
+                      "remove" -> p.removeAt(a)
+                      "move" -> p.move(a, b)
+                      "shuffle" -> p.toggleShuffle()
+                      "repeat" -> p.cycleRepeat()
+                      "clear" -> p.clearUpNext()
+                      "play" -> {
+                          noteAdded(songs, endpoint, name)
+                          p.insertSongs(songs, null, jump = true) { cursors[endpoint] = it }
+                      }
+                      "playNext" -> {
+                          noteAdded(songs, endpoint, name)
+                          p.insertSongs(songs, null, jump = false) { cursors[endpoint] = it }
+                      }
+                      "more" -> {
+                          noteAdded(songs, endpoint, name)
+                          p.insertSongs(songs, cursors[endpoint], jump = false) { cursors[endpoint] = it }
+                      }
+                      "add" -> {
+                          noteAdded(songs, endpoint, name)
+                          p.insertSongs(songs, Int.MAX_VALUE, jump = false)
+                      }
+                  }
+                  g.scope.launch(Dispatchers.Main) {
+                      delay(400)
+                      broadcast(force = true)
+                  }
+              }
+
+              private fun startBroadcasting() {
+                  stopBroadcasting()
+                  broadcastJob = g.scope.launch(Dispatchers.Main) {
+                      launch { g.player.state.collect { broadcast(force = false) } }
+                      while (isActive) {
+                          delay(4000)
+                          if (System.currentTimeMillis() - lastSent > 3500) broadcast(force = true)
+                      }
+                  }
+              }
+
+              private fun stopBroadcasting() {
+                  broadcastJob?.cancel()
+                  broadcastJob = null
+                  lastSig = ""
+              }
+
+              private fun broadcast(force: Boolean) {
+                  if (!isHost || members.isEmpty()) return
+                  val s = g.player.state.value
+                  val sig = buildString {
+                      append(s.song?.id).append('|').append(s.isPlaying).append('|').append(s.shuffle).append('|').append(s.repeat)
+                      append('|').append(members.size).append('|').append(addedBy.size)
+                      s.upNext.take(40).forEach { append('|').append(it.first).append(it.second.id) }
+                  }
+                  if (!force && sig == lastSig) return
+                  lastSig = sig
+                  lastSent = System.currentTimeMillis()
+                  var max = 40
+                  var msg = stateJson(s, max)
+                  while (msg.toString().toByteArray().size > MAX_BYTES && max > 0) {
+                      max /= 2
+                      msg = stateJson(s, max)
+                  }
+                  send(members.keys.toList(), msg)
+              }
+
+              private fun stateJson(s: PlayerState, maxNext: Int): JsonObject = buildJsonObject {
+                  put("t", "state")
+                  put("host", myName())
+                  put("playing", s.isPlaying)
+                  put("pos", s.positionMs)
+                  put("dur", s.durationMs)
+                  put("shuffle", s.shuffle)
+                  put("repeat", s.repeat)
+                  s.song?.let { put("song", AppJson.encodeToJsonElement(compact(it))) }
+                  val next = s.upNext.take(maxNext)
+                  putJsonArray("next") {
+                      next.forEach { (i, song) ->
+                          addJsonObject {
+                              put("i", i)
+                              put("s", AppJson.encodeToJsonElement(compact(song)))
+                          }
+                      }
+                  }
+                  putJsonArray("members") {
+                      add(myName())
+                      members.values.forEach { add(it) }
+                  }
+                  val ids = (listOfNotNull(s.song?.id) + next.map { it.second.id }).toSet()
+                  putJsonObject("by") { addedBy.filterKeys { it in ids }.forEach { (k, v) -> put(k, v.second) } }
+              }
+
+              // ---- guest side ----
+
+              private fun onGuestMessage(m: JsonElement) {
+                  when (m["t"].str) {
+                      "state" -> {
+                          val song = m["song"].decodeAs<Song>()
+                          val next = m["next"].list().mapNotNull { e ->
+                              val s = e["s"].decodeAs<Song>() ?: return@mapNotNull null
+                              (e["i"].lng ?: 0L).toInt() to s
+                          }
+                          g.player.setRemoteState(
+                              PlayerState(
+                                  song = song,
+                                  isPlaying = m["playing"].str == "true",
+                                  positionMs = m["pos"].lng ?: 0L,
+                                  durationMs = m["dur"].lng ?: 0L,
+                                  shuffle = m["shuffle"].str == "true",
+                                  repeat = (m["repeat"].lng ?: 0L).toInt(),
+                                  queue = listOfNotNull(song) + next.map { it.second },
+                                  upNext = next,
+                              ),
+                          )
+                          val by = m["by"].obj?.mapValues { it.value.str.orEmpty() } ?: emptyMap()
+                          val people = m["members"].list().mapNotNull { it.str }
+                          _state.update { it.copy(members = people, addedBy = by, hostName = m["host"].str ?: it.hostName) }
+                      }
+                      "listen" -> m["song"].decodeAs<Song>()?.let { g.recordListen(it, m["at"].lng ?: System.currentTimeMillis()) }
+                      "nowPlaying" -> m["song"].decodeAs<Song>()?.let { g.sendNowPlaying(it) }
+                      "end" -> {
+                          endLocal()
+                          g.toast("The jam has ended")
+                      }
+                  }
+              }
+
+              /** Guest: send a playback command to the host. */
+              fun command(op: String, songs: List<Song> = emptyList(), a: Int = 0, b: Int = 0, ms: Long = 0L) {
+                  val host = hostEndpoint ?: return
+                  fun msg(o: String, list: List<Song>) = buildJsonObject {
+                      put("t", "cmd")
+                      put("op", o)
+                      put("a", a)
+                      put("b", b)
+                      put("ms", ms)
+                      if (list.isNotEmpty()) put("songs", AppJson.encodeToJsonElement(list.map { compact(it) }))
+                  }
+                  if (songs.isEmpty()) {
+                      send(listOf(host), msg(op, emptyList()))
+                      return
+                  }
+                  songs.chunked(CHUNK).forEachIndexed { i, chunk ->
+                      val o = if (i == 0 || op == "add") op else "more"
+                      send(listOf(host), msg(o, chunk))
+                  }
+              }
+          }
+          FEYNOS_EOF_026
+          cat > 'app/src/main/java/com/feynos/music/player/MediaItems.kt' <<'FEYNOS_EOF_027'
           package com.feynos.music.player
 
           import android.content.Context
@@ -2142,8 +2618,8 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_026
-          cat > 'app/src/main/java/com/feynos/music/player/PlaybackService.kt' <<'FEYNOS_EOF_027'
+          FEYNOS_EOF_027
+          cat > 'app/src/main/java/com/feynos/music/player/PlaybackService.kt' <<'FEYNOS_EOF_028'
           package com.feynos.music.player
 
           import android.app.PendingIntent
@@ -2355,30 +2831,15 @@ jobs:
                       val s = song ?: return
                       nowPlayingSent = true
                       val g = App.graph
-                      val settings = g.settings.current
-                      g.scope.launch(Dispatchers.IO) {
-                          if (settings.scrobbleNavidrome) runCatching { g.api.scrobble(s.id, System.currentTimeMillis(), false) }
-                          if (settings.scrobbleLb && settings.lbToken.isNotBlank()) {
-                              runCatching { g.lb.submitRaw(g.lb.listenBody("playing_now", s, null)) }
-                          }
-                      }
+                      // In a jam, songs a guest added count for that guest's account instead.
+                      val guest = g.jam.creditFor(s.id)
+                      if (guest != null) g.jam.sendNowPlaying(guest, s) else g.sendNowPlaying(s)
                   }
 
                   private fun submit(s: Song, at: Long) {
                       val g = App.graph
-                      val settings = g.settings.current
-                      g.scope.launch(Dispatchers.IO) {
-                          runCatching { g.db.addPlay(s, at) }
-                          if (settings.scrobbleNavidrome) runCatching { g.api.scrobble(s.id, at, true) }
-                          if (settings.scrobbleLb && settings.lbToken.isNotBlank()) {
-                              val body = g.lb.listenBody("single", s, at / 1000)
-                              val ok = runCatching { g.lb.submitRaw(body) }.getOrDefault(false)
-                              if (!ok) {
-                                  g.db.queueLb(body)
-                                  Workers.flushListenBrainz(g.app)
-                              }
-                          }
-                      }
+                      val guest = g.jam.creditFor(s.id)
+                      if (guest != null) g.jam.sendListen(guest, s, at) else g.recordListen(s, at)
                   }
 
                   fun release() {
@@ -2386,8 +2847,8 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_027
-          cat > 'app/src/main/java/com/feynos/music/player/PlayerController.kt' <<'FEYNOS_EOF_028'
+          FEYNOS_EOF_028
+          cat > 'app/src/main/java/com/feynos/music/player/PlayerController.kt' <<'FEYNOS_EOF_029'
           package com.feynos.music.player
 
           import android.content.ComponentName
@@ -2435,6 +2896,11 @@ jobs:
               private val pending = ArrayDeque<(MediaController) -> Unit>()
               private var songs: List<Song> = emptyList()
 
+              // Jam guest mode: state comes from the host phone instead of the local player.
+              @Volatile private var remote = false
+              private var remoteAt = 0L
+              private var remotePos = 0L
+
               private val _state = MutableStateFlow(PlayerState())
               val state: StateFlow<PlayerState> = _state.asStateFlow()
 
@@ -2463,6 +2929,14 @@ jobs:
                   graph.scope.launch(Dispatchers.Main) {
                       while (true) {
                           delay(500)
+                          if (remote) {
+                              val s = _state.value
+                              if (s.isPlaying) {
+                                  val pos = remotePos + (System.currentTimeMillis() - remoteAt)
+                                  _state.update { it.copy(positionMs = if (s.durationMs > 0) pos.coerceAtMost(s.durationMs) else pos) }
+                              }
+                              continue
+                          }
                           val c = controller ?: continue
                           val sleepAt = _state.value.sleepAt
                           if (sleepAt != null && System.currentTimeMillis() >= sleepAt) {
@@ -2522,6 +2996,7 @@ jobs:
               }
 
               private fun refresh(full: Boolean) {
+                  if (remote) return
                   val c = controller ?: return
                   if (full || songs.size != c.mediaItemCount) {
                       songs = (0 until c.mediaItemCount).map { i ->
@@ -2568,8 +3043,20 @@ jobs:
                   null
               }
 
+              private val guest get() = graph.jam.isGuest
+              private val host get() = graph.jam.isHost
+
               fun play(list: List<Song>, start: Int = 0, shuffle: Boolean = false) {
                   if (list.isEmpty()) return
+                  if (guest || host) {
+                      // In a jam, playing something slots it in right now without wiping everyone's queue.
+                      val picked = if (shuffle) list.shuffled() else list.drop(start.coerceIn(0, list.size - 1))
+                      if (guest) graph.jam.command("play", picked) else {
+                          graph.jam.noteAdded(picked)
+                          insertSongs(picked, null, jump = true)
+                      }
+                      return
+                  }
                   val mediaItems = items(list) ?: return
                   withController { c ->
                       c.shuffleModeEnabled = shuffle
@@ -2580,71 +3067,143 @@ jobs:
                   }
               }
 
-              fun playNext(list: List<Song>) {
+              /**
+               * Inserts songs at [at] (null = right after the current song, past the end = append),
+               * optionally jumping to the first one. [done] gets the index just after the inserted block.
+               */
+              fun insertSongs(list: List<Song>, at: Int?, jump: Boolean, done: (Int) -> Unit = {}) {
+                  if (list.isEmpty()) return
                   val mediaItems = items(list) ?: return
                   withController { c ->
                       if (c.mediaItemCount == 0) {
                           c.setMediaItems(mediaItems)
                           c.prepare()
                           c.play()
-                      } else {
-                          c.addMediaItems(c.currentMediaItemIndex + 1, mediaItems)
+                          done(mediaItems.size)
+                          return@withController
                       }
+                      val pos = (at ?: (c.currentMediaItemIndex + 1)).coerceIn(0, c.mediaItemCount)
+                      c.addMediaItems(pos, mediaItems)
+                      if (jump) {
+                          c.seekToDefaultPosition(pos)
+                          if (c.playbackState == Player.STATE_IDLE) c.prepare()
+                          c.play()
+                      }
+                      done(pos + mediaItems.size)
                   }
               }
 
+              fun playNext(list: List<Song>) {
+                  if (guest) return graph.jam.command("playNext", list)
+                  graph.jam.noteAdded(list)
+                  insertSongs(list, null, jump = false)
+              }
+
               fun addToQueue(list: List<Song>) {
-                  val mediaItems = items(list) ?: return
+                  if (guest) return graph.jam.command("add", list)
+                  graph.jam.noteAdded(list)
+                  insertSongs(list, Int.MAX_VALUE, jump = false)
+              }
+
+              fun toggle() {
+                  if (guest) {
+                      _state.update { it.copy(isPlaying = !it.isPlaying) }
+                      remotePos = _state.value.positionMs
+                      remoteAt = System.currentTimeMillis()
+                      return graph.jam.command("toggle")
+                  }
                   withController { c ->
-                      val wasEmpty = c.mediaItemCount == 0
-                      c.addMediaItems(mediaItems)
-                      if (wasEmpty) {
-                          c.prepare()
+                      if (c.isPlaying) c.pause() else {
+                          if (c.playbackState == Player.STATE_IDLE) c.prepare()
+                          if (c.playbackState == Player.STATE_ENDED) c.seekToDefaultPosition()
                           c.play()
                       }
                   }
               }
 
-              fun toggle() = withController { c ->
-                  if (c.isPlaying) c.pause() else {
-                      if (c.playbackState == Player.STATE_IDLE) c.prepare()
-                      if (c.playbackState == Player.STATE_ENDED) c.seekToDefaultPosition()
-                      c.play()
+              fun next() {
+                  if (guest) return graph.jam.command("next")
+                  withController { it.seekToNext() }
+              }
+
+              fun previous() {
+                  if (guest) return graph.jam.command("previous")
+                  withController { it.seekToPrevious() }
+              }
+
+              fun seekTo(ms: Long) {
+                  if (guest) {
+                      remotePos = ms
+                      remoteAt = System.currentTimeMillis()
+                      _state.update { it.copy(positionMs = ms) }
+                      return graph.jam.command("seek", ms = ms)
+                  }
+                  withController { it.seekTo(ms) }
+              }
+
+              fun skipTo(index: Int) {
+                  if (guest) return graph.jam.command("skipTo", a = index)
+                  withController { c ->
+                      if (index in 0 until c.mediaItemCount) {
+                          c.seekToDefaultPosition(index)
+                          c.play()
+                      }
                   }
               }
 
-              fun next() = withController { it.seekToNext() }
-              fun previous() = withController { it.seekToPrevious() }
-              fun seekTo(ms: Long) = withController { it.seekTo(ms) }
+              fun removeAt(index: Int) {
+                  if (guest) return graph.jam.command("remove", a = index)
+                  withController { c -> if (index in 0 until c.mediaItemCount) c.removeMediaItem(index) }
+              }
 
-              fun skipTo(index: Int) = withController { c ->
-                  if (index in 0 until c.mediaItemCount) {
-                      c.seekToDefaultPosition(index)
-                      c.play()
+              fun move(from: Int, to: Int) {
+                  if (guest) return graph.jam.command("move", a = from, b = to)
+                  withController { c ->
+                      if (from in 0 until c.mediaItemCount && to in 0 until c.mediaItemCount) c.moveMediaItem(from, to)
                   }
               }
 
-              fun removeAt(index: Int) = withController { c -> if (index in 0 until c.mediaItemCount) c.removeMediaItem(index) }
-
-              fun move(from: Int, to: Int) = withController { c ->
-                  if (from in 0 until c.mediaItemCount && to in 0 until c.mediaItemCount) c.moveMediaItem(from, to)
-              }
-
-              fun clearUpNext() = withController { c ->
-                  val cur = c.currentMediaItemIndex
-                  if (cur < 0) return@withController
-                  if (cur + 1 < c.mediaItemCount) c.removeMediaItems(cur + 1, c.mediaItemCount)
-                  if (cur > 0) c.removeMediaItems(0, cur)
-              }
-
-              fun toggleShuffle() = withController { it.shuffleModeEnabled = !it.shuffleModeEnabled }
-
-              fun cycleRepeat() = withController { c ->
-                  c.repeatMode = when (c.repeatMode) {
-                      Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
-                      Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
-                      else -> Player.REPEAT_MODE_OFF
+              fun clearUpNext() {
+                  if (guest) return graph.jam.command("clear")
+                  withController { c ->
+                      val cur = c.currentMediaItemIndex
+                      if (cur < 0) return@withController
+                      if (cur + 1 < c.mediaItemCount) c.removeMediaItems(cur + 1, c.mediaItemCount)
+                      if (cur > 0) c.removeMediaItems(0, cur)
                   }
+              }
+
+              fun toggleShuffle() {
+                  if (guest) return graph.jam.command("shuffle")
+                  withController { it.shuffleModeEnabled = !it.shuffleModeEnabled }
+              }
+
+              fun cycleRepeat() {
+                  if (guest) return graph.jam.command("repeat")
+                  withController { c ->
+                      c.repeatMode = when (c.repeatMode) {
+                          Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
+                          Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
+                          else -> Player.REPEAT_MODE_OFF
+                      }
+                  }
+              }
+
+              /** Pauses this phone's own player (used when joining someone else's jam). */
+              fun pauseLocal() = withController { it.pause() }
+
+              /** Guest: show the host's playback instead of our own. */
+              fun setRemoteState(ps: PlayerState) {
+                  remote = true
+                  remotePos = ps.positionMs
+                  remoteAt = System.currentTimeMillis()
+                  _state.value = ps
+              }
+
+              fun clearRemote() {
+                  remote = false
+                  _state.value = PlayerState()
+                  withController { refresh(true) }
               }
 
               fun setSleepMinutes(minutes: Int?) {
@@ -2662,8 +3221,8 @@ jobs:
                   c.clearMediaItems()
               }
           }
-          FEYNOS_EOF_028
-          cat > 'app/src/main/java/com/feynos/music/update/Updater.kt' <<'FEYNOS_EOF_029'
+          FEYNOS_EOF_029
+          cat > 'app/src/main/java/com/feynos/music/update/Updater.kt' <<'FEYNOS_EOF_030'
           package com.feynos.music.update
 
           import android.content.Context
@@ -2749,8 +3308,8 @@ jobs:
                   return true
               }
           }
-          FEYNOS_EOF_029
-          cat > 'app/src/main/java/com/feynos/music/work/Workers.kt' <<'FEYNOS_EOF_030'
+          FEYNOS_EOF_030
+          cat > 'app/src/main/java/com/feynos/music/work/Workers.kt' <<'FEYNOS_EOF_031'
           package com.feynos.music.work
 
           import android.content.Context
@@ -2895,12 +3454,12 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_030
+          FEYNOS_EOF_031
 
       - name: Write user interface
         run: |
           mkdir -p "app/src/main/java/com/feynos/music/ui"
-          cat > 'app/src/main/java/com/feynos/music/ui/Components.kt' <<'FEYNOS_EOF_031'
+          cat > 'app/src/main/java/com/feynos/music/ui/Components.kt' <<'FEYNOS_EOF_032'
           @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
           package com.feynos.music.ui
@@ -3368,8 +3927,8 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_031
-          cat > 'app/src/main/java/com/feynos/music/ui/CoverArtScreens.kt' <<'FEYNOS_EOF_032'
+          FEYNOS_EOF_032
+          cat > 'app/src/main/java/com/feynos/music/ui/CoverArtScreens.kt' <<'FEYNOS_EOF_033'
           @file:OptIn(ExperimentalMaterial3Api::class)
 
           package com.feynos.music.ui
@@ -3564,8 +4123,8 @@ jobs:
                   modifier = Modifier.clickable(onClick = onClick),
               )
           }
-          FEYNOS_EOF_032
-          cat > 'app/src/main/java/com/feynos/music/ui/DetailScreens.kt' <<'FEYNOS_EOF_033'
+          FEYNOS_EOF_033
+          cat > 'app/src/main/java/com/feynos/music/ui/DetailScreens.kt' <<'FEYNOS_EOF_034'
           @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
           package com.feynos.music.ui
@@ -4023,8 +4582,8 @@ jobs:
                   DownloadsContent()
               }
           }
-          FEYNOS_EOF_033
-          cat > 'app/src/main/java/com/feynos/music/ui/ForYouScreens.kt' <<'FEYNOS_EOF_034'
+          FEYNOS_EOF_034
+          cat > 'app/src/main/java/com/feynos/music/ui/ForYouScreens.kt' <<'FEYNOS_EOF_035'
           @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
           package com.feynos.music.ui
@@ -4428,8 +4987,229 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_034
-          cat > 'app/src/main/java/com/feynos/music/ui/MainScreens.kt' <<'FEYNOS_EOF_035'
+          FEYNOS_EOF_035
+          cat > 'app/src/main/java/com/feynos/music/ui/JamScreen.kt' <<'FEYNOS_EOF_036'
+          @file:OptIn(ExperimentalMaterial3Api::class)
+
+          package com.feynos.music.ui
+
+          import android.Manifest
+          import android.content.pm.PackageManager
+          import android.os.Build
+          import androidx.activity.compose.rememberLauncherForActivityResult
+          import androidx.activity.result.contract.ActivityResultContracts
+          import androidx.compose.foundation.background
+          import androidx.compose.foundation.clickable
+          import androidx.compose.foundation.layout.*
+          import androidx.compose.foundation.lazy.LazyColumn
+          import androidx.compose.foundation.lazy.items
+          import androidx.compose.foundation.shape.CircleShape
+          import androidx.compose.foundation.shape.RoundedCornerShape
+          import androidx.compose.material.icons.Icons
+          import androidx.compose.material.icons.rounded.*
+          import androidx.compose.material3.*
+          import androidx.compose.runtime.*
+          import androidx.compose.ui.Alignment
+          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.draw.clip
+          import androidx.compose.ui.graphics.Brush
+          import androidx.compose.ui.graphics.Color
+          import androidx.compose.ui.graphics.vector.ImageVector
+          import androidx.compose.ui.platform.LocalContext
+          import androidx.compose.ui.text.font.FontWeight
+          import androidx.compose.ui.text.style.TextAlign
+          import androidx.compose.ui.unit.dp
+          import androidx.core.content.ContextCompat
+          import androidx.lifecycle.compose.collectAsStateWithLifecycle
+          import com.feynos.music.jam.JamRole
+
+          private fun jamPermissions(): Array<String> {
+              // Android 13+ uses "Nearby devices"; older versions need location for Bluetooth scanning.
+              val list = mutableListOf<String>()
+              if (Build.VERSION.SDK_INT < 33) list += Manifest.permission.ACCESS_FINE_LOCATION
+              if (Build.VERSION.SDK_INT >= 31) {
+                  list += listOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_ADVERTISE, Manifest.permission.BLUETOOTH_CONNECT)
+              }
+              if (Build.VERSION.SDK_INT >= 33) list += Manifest.permission.NEARBY_WIFI_DEVICES
+              return list.toTypedArray()
+          }
+
+          @Composable
+          fun JamScreen() {
+              val nav = LocalNavi.current
+              val ctx = LocalContext.current
+              val jam by graph.jam.state.collectAsStateWithLifecycle()
+              var pendingAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+              val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
+                  if (jamPermissions().all { result[it] == true || ContextCompat.checkSelfPermission(ctx, it) == PackageManager.PERMISSION_GRANTED }) {
+                      pendingAction?.invoke()
+                  } else {
+                      graph.toast("Jam needs the Nearby devices and Location permissions")
+                  }
+                  pendingAction = null
+              }
+
+              fun withPermissions(action: () -> Unit) {
+                  val missing = jamPermissions().filter { ContextCompat.checkSelfPermission(ctx, it) != PackageManager.PERMISSION_GRANTED }
+                  if (missing.isEmpty()) action() else {
+                      pendingAction = action
+                      launcher.launch(jamPermissions())
+                  }
+              }
+
+              DisposableEffect(Unit) {
+                  onDispose { if (graph.jam.state.value.role == JamRole.NONE) graph.jam.stopSearching() }
+              }
+
+              Column(Modifier.fillMaxSize()) {
+                  TopBar("Jam", onBack = { nav.back() })
+                  LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp)) {
+                      item {
+                          Box(
+                              Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+                                  .background(Brush.linearGradient(listOf(Color(0xFF6C3CE0), Color(0xFFD81B60))))
+                                  .padding(20.dp),
+                          ) {
+                              Column {
+                                  Icon(Icons.Rounded.Groups, null, tint = Color.White, modifier = Modifier.size(40.dp))
+                                  Spacer(Modifier.height(8.dp))
+                                  Text(
+                                      when (jam.role) {
+                                          JamRole.HOST -> "Your jam is live"
+                                          JamRole.GUEST -> "You're in ${jam.hostName}'s jam"
+                                          JamRole.NONE -> "Listen together"
+                                      },
+                                      color = Color.White, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black,
+                                  )
+                                  Text(
+                                      when (jam.role) {
+                                          JamRole.HOST -> "Music plays from this phone. Friends nearby can join from their Jam screen and control everything."
+                                          JamRole.GUEST -> "Music plays on ${jam.hostName}'s phone. Anything you play, queue or skip happens there."
+                                          JamRole.NONE -> "Play through one phone (like the one on the car stereo) while everyone adds songs and controls the music from their own phone."
+                                      },
+                                      color = Color.White.copy(alpha = 0.9f), style = MaterialTheme.typography.bodyMedium,
+                                  )
+                              }
+                          }
+                      }
+                      jam.error?.let { err ->
+                          item { Text(err, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 12.dp)) }
+                      }
+                      when (jam.role) {
+                          JamRole.NONE -> {
+                              item {
+                                  Spacer(Modifier.height(16.dp))
+                                  BigChoice(
+                                      Icons.Rounded.Speaker, "Start a jam",
+                                      "Use this phone for the music (the one connected to the stereo).",
+                                  ) { withPermissions { graph.jam.startHosting() } }
+                                  Spacer(Modifier.height(12.dp))
+                                  BigChoice(Icons.Rounded.PersonAdd, "Join a jam", "Find a jam started on a phone nearby.") {
+                                      withPermissions { graph.jam.startSearching() }
+                                  }
+                              }
+                              if (jam.searching) {
+                                  item {
+                                      Row(Modifier.padding(top = 24.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                          CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                                          Spacer(Modifier.width(12.dp))
+                                          Text("Looking for jams nearby…", fontWeight = FontWeight.Bold)
+                                      }
+                                      Text(
+                                          "Keep both phones close with Bluetooth on. The other phone needs to tap Start a jam.",
+                                          style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                      )
+                                  }
+                                  items(jam.found) { ep ->
+                                      ListItem(
+                                          headlineContent = { Text(ep.name) },
+                                          supportingContent = { Text(if (jam.connectingTo == ep.id) "Joining…" else "Tap to join") },
+                                          leadingContent = { Icon(Icons.Rounded.Speaker, null, tint = MaterialTheme.colorScheme.primary) },
+                                          colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                                          modifier = Modifier.clickable(enabled = jam.connectingTo == null) { graph.jam.join(ep) },
+                                      )
+                                  }
+                              }
+                          }
+                          else -> {
+                              item {
+                                  Text(
+                                      "In the jam (${jam.members.size})", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold,
+                                      modifier = Modifier.padding(top = 24.dp, bottom = 8.dp),
+                                  )
+                              }
+                              items(jam.members.withIndex().toList()) { (i, name) ->
+                                  Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                      Box(
+                                          Modifier.size(40.dp).clip(CircleShape).background(colorFor(name)),
+                                          contentAlignment = Alignment.Center,
+                                      ) { Text(name.take(1).uppercase(), color = Color.White, fontWeight = FontWeight.Bold) }
+                                      Spacer(Modifier.width(12.dp))
+                                      Column {
+                                          Text(name)
+                                          if (i == 0) Text("Playing the music", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                      }
+                                  }
+                              }
+                              item {
+                                  Spacer(Modifier.height(16.dp))
+                                  Text(
+                                      "Each person's listens go to their own Navidrome and ListenBrainz history for the songs they added.",
+                                      style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                  )
+                                  Spacer(Modifier.height(16.dp))
+                                  Button(
+                                      onClick = { graph.jam.leave() },
+                                      colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                                      modifier = Modifier.fillMaxWidth(),
+                                  ) { Text(if (jam.role == JamRole.HOST) "End jam for everyone" else "Leave jam") }
+                              }
+                          }
+                      }
+                  }
+              }
+          }
+
+          @Composable
+          private fun BigChoice(icon: ImageVector, title: String, body: String, onClick: () -> Unit) {
+              Row(
+                  Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                      .clickable(onClick = onClick).padding(16.dp),
+                  verticalAlignment = Alignment.CenterVertically,
+              ) {
+                  Icon(icon, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(32.dp))
+                  Spacer(Modifier.width(16.dp))
+                  Column {
+                      Text(title, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                      Text(body, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                  }
+              }
+          }
+
+          /** Small bar above the mini player while a jam is running. */
+          @Composable
+          fun JamBanner() {
+              val nav = LocalNavi.current
+              val jam by graph.jam.state.collectAsStateWithLifecycle()
+              if (jam.role == JamRole.NONE) return
+              Row(
+                  Modifier.fillMaxWidth().padding(horizontal = 8.dp).clip(RoundedCornerShape(8.dp))
+                      .background(Brush.horizontalGradient(listOf(Color(0xFF6C3CE0), Color(0xFFD81B60))))
+                      .clickable { nav.route("jam") }.padding(horizontal = 12.dp, vertical = 6.dp),
+                  verticalAlignment = Alignment.CenterVertically,
+              ) {
+                  Icon(Icons.Rounded.Groups, null, tint = Color.White, modifier = Modifier.size(18.dp))
+                  Spacer(Modifier.width(8.dp))
+                  Text(
+                      if (jam.role == JamRole.HOST) "Jam live · ${jam.members.size} ${if (jam.members.size == 1) "person" else "people"}"
+                      else "In ${jam.hostName}'s jam · ${jam.members.size} people",
+                      color = Color.White, style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f),
+                      textAlign = TextAlign.Start,
+                  )
+              }
+          }
+          FEYNOS_EOF_036
+          cat > 'app/src/main/java/com/feynos/music/ui/MainScreens.kt' <<'FEYNOS_EOF_037'
           @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
           package com.feynos.music.ui
@@ -4608,6 +5388,7 @@ jobs:
                               verticalAlignment = Alignment.CenterVertically,
                           ) {
                               Text(greeting(), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                              IconButton(onClick = { nav.route("jam") }) { Icon(Icons.Rounded.Groups, "Jam") }
                               IconButton(onClick = { nav.route("history") }) { Icon(Icons.Rounded.History, "History") }
                               IconButton(onClick = { nav.route("stats") }) { Icon(Icons.Rounded.BarChart, "Stats") }
                               IconButton(onClick = { nav.route("settings") }) { Icon(Icons.Rounded.Settings, "Settings") }
@@ -5021,8 +5802,8 @@ jobs:
                   dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
               )
           }
-          FEYNOS_EOF_035
-          cat > 'app/src/main/java/com/feynos/music/ui/NowPlaying.kt' <<'FEYNOS_EOF_036'
+          FEYNOS_EOF_037
+          cat > 'app/src/main/java/com/feynos/music/ui/NowPlaying.kt' <<'FEYNOS_EOF_038'
           @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
           package com.feynos.music.ui
@@ -5159,7 +5940,16 @@ jobs:
               Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                   IconButton(onClick = onClose) { Icon(Icons.Rounded.KeyboardArrowDown, "Close", modifier = Modifier.size(32.dp)) }
                   Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                      Text("PLAYING FROM", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                      val jamState by graph.jam.state.collectAsStateWithLifecycle()
+                      Text(
+                          when (jamState.role) {
+                              com.feynos.music.jam.JamRole.NONE -> "PLAYING FROM"
+                              com.feynos.music.jam.JamRole.HOST -> "JAM · ${jamState.members.size} PEOPLE"
+                              com.feynos.music.jam.JamRole.GUEST -> "JAM ON ${jamState.hostName.uppercase()}'S PHONE"
+                          },
+                          style = MaterialTheme.typography.labelSmall,
+                          color = if (jamState.role == com.feynos.music.jam.JamRole.NONE) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary,
+                      )
                       Text(
                           song.album ?: "Your queue", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold,
                           maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center,
@@ -5167,7 +5957,16 @@ jobs:
                   }
                   Box {
                       IconButton(onClick = { menu = true }) { Icon(Icons.Rounded.MoreVert, "More") }
+                      val nav = LocalNavi.current
                       SongMenu(song, menu, { menu = false }) { close ->
+                          DropdownMenuItem(
+                              text = { Text("Jam") },
+                              leadingIcon = { Icon(Icons.Rounded.Groups, null) },
+                              onClick = {
+                                  close()
+                                  nav.route("jam")
+                              },
+                          )
                           DropdownMenuItem(
                               text = { Text("Sleep timer") },
                               leadingIcon = { Icon(Icons.Rounded.Bedtime, null) },
@@ -5348,6 +6147,8 @@ jobs:
 
           @Composable
           private fun QueueRow(song: Song, highlight: Boolean, onClick: () -> Unit, trailing: @Composable RowScope.() -> Unit = {}) {
+              val jam by graph.jam.state.collectAsStateWithLifecycle()
+              val by = jam.addedBy[song.id]
               Row(
                   Modifier.fillMaxWidth().clickable(onClick = onClick).padding(start = 16.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
                   verticalAlignment = Alignment.CenterVertically,
@@ -5360,7 +6161,7 @@ jobs:
                           color = if (highlight) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                       )
                       Text(
-                          song.artist.orEmpty(), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                          song.artist.orEmpty() + (by?.let { " · added by $it" } ?: ""), maxLines = 1, overflow = TextOverflow.Ellipsis,
                           style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                       )
                   }
@@ -5406,8 +6207,8 @@ jobs:
                   dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
               )
           }
-          FEYNOS_EOF_036
-          cat > 'app/src/main/java/com/feynos/music/ui/SettingsScreen.kt' <<'FEYNOS_EOF_037'
+          FEYNOS_EOF_038
+          cat > 'app/src/main/java/com/feynos/music/ui/SettingsScreen.kt' <<'FEYNOS_EOF_039'
           @file:OptIn(ExperimentalMaterial3Api::class)
 
           package com.feynos.music.ui
@@ -5668,8 +6469,8 @@ jobs:
                   confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
               )
           }
-          FEYNOS_EOF_037
-          cat > 'app/src/main/java/com/feynos/music/ui/Shell.kt' <<'FEYNOS_EOF_038'
+          FEYNOS_EOF_039
+          cat > 'app/src/main/java/com/feynos/music/ui/Shell.kt' <<'FEYNOS_EOF_040'
           @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
           package com.feynos.music.ui
@@ -5787,9 +6588,11 @@ jobs:
                                       composable("stats") { StatsScreen() }
                                       composable("settings") { SettingsScreen() }
                                       composable("covers") { CoverArtScreen() }
+                                      composable("jam") { JamScreen() }
                                   }
                                   SnackbarHost(snack, Modifier.align(Alignment.BottomCenter))
                               }
+                              JamBanner()
                               if (ps.song != null) MiniPlayer(ps, onOpen = { showPlayer = true })
                               if (!wide) {
                                   NavigationBar(containerColor = MaterialTheme.colorScheme.surface, tonalElevation = 0.dp) {
@@ -5980,8 +6783,8 @@ jobs:
                   dismissButton = { TextButton(onClick = onDismiss, enabled = progress == null) { Text("Later") } },
               )
           }
-          FEYNOS_EOF_038
-          cat > 'app/src/main/java/com/feynos/music/ui/Theme.kt' <<'FEYNOS_EOF_039'
+          FEYNOS_EOF_040
+          cat > 'app/src/main/java/com/feynos/music/ui/Theme.kt' <<'FEYNOS_EOF_041'
           package com.feynos.music.ui
 
           import android.os.Build
@@ -6026,7 +6829,7 @@ jobs:
                   CompositionLocalProvider(LocalContentColor provides scheme.onBackground, content = content)
               }
           }
-          FEYNOS_EOF_039
+          FEYNOS_EOF_041
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
