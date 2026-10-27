@@ -25,6 +25,12 @@
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 	</dict>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_feynosjam._tcp</string>
+	</array>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Feynos Music uses your local network so phones can join a Jam and control the music.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>

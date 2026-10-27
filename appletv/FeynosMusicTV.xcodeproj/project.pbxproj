@@ -10,6 +10,7 @@
 		0829776F978455D752612799 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7621D4A1DE21CCDF40A3F7F /* Models.swift */; };
 		26945BEFCAE116E8C51AEB2D /* NowPlayingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2398AA60C376EEF46EA46B18 /* NowPlayingView.swift */; };
 		327EA1DE3D4557FE459BDD2B /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A19316A6EB309A2417FE16D1 /* SettingsView.swift */; };
+		548EFB77EF97F82A371FCA7D /* JamHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 655098CFD047D3D9E578A51A /* JamHost.swift */; };
 		6E72FE30363B4FC7B2A6DFF1 /* ListenBrainz.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65B639BE21E88E7DAF818108 /* ListenBrainz.swift */; };
 		71D8D5D8269691A88982672D /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8A975A51CD9FC16ADE4BE9F /* Components.swift */; };
 		72613F02505B3E15EE3F2702 /* Smart.swift in Sources */ = {isa = PBXBuildFile; fileRef = 224012A3A66DF228E90C7095 /* Smart.swift */; };
@@ -32,6 +33,7 @@
 		3A96120737F879CCD1202BF6 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		3FBE0558DA60FBC2DC734126 /* Player.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Player.swift; sourceTree = "<group>"; };
 		5979CC188C30280CBC810D76 /* MainScreens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainScreens.swift; sourceTree = "<group>"; };
+		655098CFD047D3D9E578A51A /* JamHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JamHost.swift; sourceTree = "<group>"; };
 		65B639BE21E88E7DAF818108 /* ListenBrainz.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListenBrainz.swift; sourceTree = "<group>"; };
 		723E68BE3439C159A51F594C /* FeynosMusicTV.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = FeynosMusicTV.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		7324C18B76AC8F28448E635F /* Util.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Util.swift; sourceTree = "<group>"; };
@@ -56,6 +58,7 @@
 		8AF8AB0C9612064687B1DEF0 /* Core */ = {
 			isa = PBXGroup;
 			children = (
+				655098CFD047D3D9E578A51A /* JamHost.swift */,
 				65B639BE21E88E7DAF818108 /* ListenBrainz.swift */,
 				A7621D4A1DE21CCDF40A3F7F /* Models.swift */,
 				3FBE0558DA60FBC2DC734126 /* Player.swift */,
@@ -174,6 +177,7 @@
 				C9A4F9124B097C06A49D1F4E /* AppRoot.swift in Sources */,
 				71D8D5D8269691A88982672D /* Components.swift in Sources */,
 				DF81905EB4AFEAFF4BB5FF48 /* DetailScreens.swift in Sources */,
+				548EFB77EF97F82A371FCA7D /* JamHost.swift in Sources */,
 				6E72FE30363B4FC7B2A6DFF1 /* ListenBrainz.swift in Sources */,
 				88022F8FEF7BF49E5C1D35FA /* MainScreens.swift in Sources */,
 				0829776F978455D752612799 /* Models.swift in Sources */,
