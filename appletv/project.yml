@@ -1,0 +1,40 @@
+# Xcode project definition. GitHub generates FeynosMusicTV.xcodeproj from this file
+# (see .github/workflows/appletv.yml), so you can just download the repo and open it.
+name: FeynosMusicTV
+options:
+  bundleIdPrefix: com.feynos
+  deploymentTarget:
+    tvOS: "17.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+targets:
+  FeynosMusicTV:
+    type: application
+    platform: tvOS
+    sources:
+      - path: FeynosMusicTV
+    info:
+      path: FeynosMusicTV/Info.plist
+      properties:
+        CFBundleDisplayName: Feynos Music
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UIBackgroundModes: [audio]
+        UILaunchScreen: {}
+        UIUserInterfaceStyle: Dark
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.feynos.music.tv
+        PRODUCT_NAME: FeynosMusicTV
+        ASSETCATALOG_COMPILER_APPICON_NAME: "App Icon & Top Shelf Image"
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        TARGETED_DEVICE_FAMILY: "3"
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: ""
+        ENABLE_PREVIEWS: YES
