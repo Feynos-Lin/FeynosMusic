@@ -5887,9 +5887,12 @@ jobs:
                       if (wide) {
                           Row(Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 8.dp)) {
                               Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.Center) {
-                                  Box(Modifier.weight(1f, fill = false).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                                  // Biggest square that fits both the width and the height available.
+                                  BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                                      val side = if (maxWidth < maxHeight) maxWidth else maxHeight
                                       Cover(
-                                          song.coverArt, albumId = song.albumId, modifier = Modifier.fillMaxHeight().aspectRatio(1f, matchHeightConstraintsFirst = true).shadow(24.dp, RoundedCornerShape(10.dp)),
+                                          song.coverArt, albumId = song.albumId,
+                                          modifier = Modifier.size(side).shadow(24.dp, RoundedCornerShape(10.dp)),
                                           size = 1000, shape = RoundedCornerShape(10.dp),
                                       )
                                   }
