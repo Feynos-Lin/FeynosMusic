@@ -1,0 +1,383 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		0829776F978455D752612799 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7621D4A1DE21CCDF40A3F7F /* Models.swift */; };
+		26945BEFCAE116E8C51AEB2D /* NowPlayingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2398AA60C376EEF46EA46B18 /* NowPlayingView.swift */; };
+		327EA1DE3D4557FE459BDD2B /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A19316A6EB309A2417FE16D1 /* SettingsView.swift */; };
+		6E72FE30363B4FC7B2A6DFF1 /* ListenBrainz.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65B639BE21E88E7DAF818108 /* ListenBrainz.swift */; };
+		71D8D5D8269691A88982672D /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8A975A51CD9FC16ADE4BE9F /* Components.swift */; };
+		72613F02505B3E15EE3F2702 /* Smart.swift in Sources */ = {isa = PBXBuildFile; fileRef = 224012A3A66DF228E90C7095 /* Smart.swift */; };
+		7C02FC14ECDC7AC098C7174F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E5F35FE94CC68F628BBCAE55 /* Assets.xcassets */; };
+		88022F8FEF7BF49E5C1D35FA /* MainScreens.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5979CC188C30280CBC810D76 /* MainScreens.swift */; };
+		8B8D94618196E77E2D2F9B58 /* Store.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D585207336A60248C41C733 /* Store.swift */; };
+		93264D7A468BF8C566DA043A /* Player.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FBE0558DA60FBC2DC734126 /* Player.swift */; };
+		A30A6D9E2F1F6649DA02C4C0 /* Subsonic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A199FD2872D4BD51ACFFA76 /* Subsonic.swift */; };
+		C9A4F9124B097C06A49D1F4E /* AppRoot.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3D3C465C386C8591905A8EB /* AppRoot.swift */; };
+		DF81905EB4AFEAFF4BB5FF48 /* DetailScreens.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21216718E9AE4EC7E19A3DE0 /* DetailScreens.swift */; };
+		E065A3CB1758A4DBB3ED21BA /* Util.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7324C18B76AC8F28448E635F /* Util.swift */; };
+		E6D6B5370A39DF21EEE3AD88 /* Settings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9EDB4DEFE76D395EAC95E676 /* Settings.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		0A199FD2872D4BD51ACFFA76 /* Subsonic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Subsonic.swift; sourceTree = "<group>"; };
+		21216718E9AE4EC7E19A3DE0 /* DetailScreens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetailScreens.swift; sourceTree = "<group>"; };
+		224012A3A66DF228E90C7095 /* Smart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Smart.swift; sourceTree = "<group>"; };
+		2398AA60C376EEF46EA46B18 /* NowPlayingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NowPlayingView.swift; sourceTree = "<group>"; };
+		3A96120737F879CCD1202BF6 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		3FBE0558DA60FBC2DC734126 /* Player.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Player.swift; sourceTree = "<group>"; };
+		5979CC188C30280CBC810D76 /* MainScreens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainScreens.swift; sourceTree = "<group>"; };
+		65B639BE21E88E7DAF818108 /* ListenBrainz.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListenBrainz.swift; sourceTree = "<group>"; };
+		723E68BE3439C159A51F594C /* FeynosMusicTV.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = FeynosMusicTV.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		7324C18B76AC8F28448E635F /* Util.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Util.swift; sourceTree = "<group>"; };
+		7D585207336A60248C41C733 /* Store.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Store.swift; sourceTree = "<group>"; };
+		9EDB4DEFE76D395EAC95E676 /* Settings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Settings.swift; sourceTree = "<group>"; };
+		A19316A6EB309A2417FE16D1 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		A7621D4A1DE21CCDF40A3F7F /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		D3D3C465C386C8591905A8EB /* AppRoot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRoot.swift; sourceTree = "<group>"; };
+		E5F35FE94CC68F628BBCAE55 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		E8A975A51CD9FC16ADE4BE9F /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		3086BD239749CB877ACF3FBB = {
+			isa = PBXGroup;
+			children = (
+				A7CC6D5D31AB62622E94701B /* FeynosMusicTV */,
+				90850BBB5BDD198193786C9A /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		8AF8AB0C9612064687B1DEF0 /* Core */ = {
+			isa = PBXGroup;
+			children = (
+				65B639BE21E88E7DAF818108 /* ListenBrainz.swift */,
+				A7621D4A1DE21CCDF40A3F7F /* Models.swift */,
+				3FBE0558DA60FBC2DC734126 /* Player.swift */,
+				9EDB4DEFE76D395EAC95E676 /* Settings.swift */,
+				224012A3A66DF228E90C7095 /* Smart.swift */,
+				7D585207336A60248C41C733 /* Store.swift */,
+				0A199FD2872D4BD51ACFFA76 /* Subsonic.swift */,
+				7324C18B76AC8F28448E635F /* Util.swift */,
+			);
+			path = Core;
+			sourceTree = "<group>";
+		};
+		90850BBB5BDD198193786C9A /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				723E68BE3439C159A51F594C /* FeynosMusicTV.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		A7CC6D5D31AB62622E94701B /* FeynosMusicTV */ = {
+			isa = PBXGroup;
+			children = (
+				E5F35FE94CC68F628BBCAE55 /* Assets.xcassets */,
+				3A96120737F879CCD1202BF6 /* Info.plist */,
+				8AF8AB0C9612064687B1DEF0 /* Core */,
+				D8C02DD4966F97613B054E12 /* Views */,
+			);
+			path = FeynosMusicTV;
+			sourceTree = "<group>";
+		};
+		D8C02DD4966F97613B054E12 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				D3D3C465C386C8591905A8EB /* AppRoot.swift */,
+				E8A975A51CD9FC16ADE4BE9F /* Components.swift */,
+				21216718E9AE4EC7E19A3DE0 /* DetailScreens.swift */,
+				5979CC188C30280CBC810D76 /* MainScreens.swift */,
+				2398AA60C376EEF46EA46B18 /* NowPlayingView.swift */,
+				A19316A6EB309A2417FE16D1 /* SettingsView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		F8AD4FFC64F6C8A345BC1851 /* FeynosMusicTV */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 82D35A0A7738696F973FBC6C /* Build configuration list for PBXNativeTarget "FeynosMusicTV" */;
+			buildPhases = (
+				CDDE4F07FC2436B3D9DE6CB0 /* Sources */,
+				72C78A88C66BF993C7034490 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = FeynosMusicTV;
+			packageProductDependencies = (
+			);
+			productName = FeynosMusicTV;
+			productReference = 723E68BE3439C159A51F594C /* FeynosMusicTV.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		4809898D9ABFC4EB84308EF4 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					F8AD4FFC64F6C8A345BC1851 = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = AB59098174BB55CBFFC27BC6 /* Build configuration list for PBXProject "FeynosMusicTV" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 3086BD239749CB877ACF3FBB;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 90850BBB5BDD198193786C9A /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				F8AD4FFC64F6C8A345BC1851 /* FeynosMusicTV */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		72C78A88C66BF993C7034490 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7C02FC14ECDC7AC098C7174F /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		CDDE4F07FC2436B3D9DE6CB0 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C9A4F9124B097C06A49D1F4E /* AppRoot.swift in Sources */,
+				71D8D5D8269691A88982672D /* Components.swift in Sources */,
+				DF81905EB4AFEAFF4BB5FF48 /* DetailScreens.swift in Sources */,
+				6E72FE30363B4FC7B2A6DFF1 /* ListenBrainz.swift in Sources */,
+				88022F8FEF7BF49E5C1D35FA /* MainScreens.swift in Sources */,
+				0829776F978455D752612799 /* Models.swift in Sources */,
+				26945BEFCAE116E8C51AEB2D /* NowPlayingView.swift in Sources */,
+				93264D7A468BF8C566DA043A /* Player.swift in Sources */,
+				E6D6B5370A39DF21EEE3AD88 /* Settings.swift in Sources */,
+				327EA1DE3D4557FE459BDD2B /* SettingsView.swift in Sources */,
+				72613F02505B3E15EE3F2702 /* Smart.swift in Sources */,
+				8B8D94618196E77E2D2F9B58 /* Store.swift in Sources */,
+				A30A6D9E2F1F6649DA02C4C0 /* Subsonic.swift in Sources */,
+				E065A3CB1758A4DBB3ED21BA /* Util.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		219AEDF90B21729701F265C8 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MARKETING_VERSION = 1.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = appletvos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+				TVOS_DEPLOYMENT_TARGET = 17.0;
+			};
+			name = Release;
+		};
+		7DA044515FF80F138D1CE5B6 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "App Icon & Top Shelf Image";
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_LAUNCHIMAGE_NAME = LaunchImage;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_PREVIEWS = YES;
+				INFOPLIST_FILE = FeynosMusicTV/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.feynos.music.tv;
+				PRODUCT_NAME = FeynosMusicTV;
+				SDKROOT = appletvos;
+				TARGETED_DEVICE_FAMILY = 3;
+			};
+			name = Release;
+		};
+		B42DD168151C776A47026ADB /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "App Icon & Top Shelf Image";
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_LAUNCHIMAGE_NAME = LaunchImage;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_PREVIEWS = YES;
+				INFOPLIST_FILE = FeynosMusicTV/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.feynos.music.tv;
+				PRODUCT_NAME = FeynosMusicTV;
+				SDKROOT = appletvos;
+				TARGETED_DEVICE_FAMILY = 3;
+			};
+			name = Debug;
+		};
+		D3733B3F290892AA40E3B349 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MARKETING_VERSION = 1.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = appletvos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+				TVOS_DEPLOYMENT_TARGET = 17.0;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		82D35A0A7738696F973FBC6C /* Build configuration list for PBXNativeTarget "FeynosMusicTV" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B42DD168151C776A47026ADB /* Debug */,
+				7DA044515FF80F138D1CE5B6 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		AB59098174BB55CBFFC27BC6 /* Build configuration list for PBXProject "FeynosMusicTV" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D3733B3F290892AA40E3B349 /* Debug */,
+				219AEDF90B21729701F265C8 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 4809898D9ABFC4EB84308EF4 /* Project object */;
+}
