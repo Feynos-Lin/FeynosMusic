@@ -6543,10 +6543,11 @@ jobs:
 
               fun select(route: String) {
                   showPlayer = false
+                  // If that tab's page is already underneath (e.g. Home under Settings), go straight back to it.
+                  if (nav.popBackStack(route, inclusive = false)) return
                   nav.navigate(route) {
-                      popUpTo(nav.graph.findStartDestination().id) { saveState = true }
+                      popUpTo(nav.graph.findStartDestination().id)
                       launchSingleTop = true
-                      restoreState = true
                   }
               }
 
