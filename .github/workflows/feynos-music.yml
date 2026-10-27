@@ -5024,9 +5024,8 @@ jobs:
           import com.feynos.music.jam.JamRole
 
           private fun jamPermissions(): Array<String> {
-              // Android 13+ uses "Nearby devices"; older versions need location for Bluetooth scanning.
-              val list = mutableListOf<String>()
-              if (Build.VERSION.SDK_INT < 33) list += Manifest.permission.ACCESS_FINE_LOCATION
+              // Google's Nearby service still checks for location access on every Android version.
+              val list = mutableListOf(Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION)
               if (Build.VERSION.SDK_INT >= 31) {
                   list += listOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_ADVERTISE, Manifest.permission.BLUETOOTH_CONNECT)
               }
@@ -5041,16 +5040,18 @@ jobs:
               val jam by graph.jam.state.collectAsStateWithLifecycle()
               var pendingAction by remember { mutableStateOf<(() -> Unit)?>(null) }
               val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
-                  if (jamPermissions().all { result[it] == true || ContextCompat.checkSelfPermission(ctx, it) == PackageManager.PERMISSION_GRANTED }) {
+                  if (jamPermissions().filter { it != Manifest.permission.ACCESS_FINE_LOCATION }.all { result[it] == true || ContextCompat.checkSelfPermission(ctx, it) == PackageManager.PERMISSION_GRANTED }) {
                       pendingAction?.invoke()
                   } else {
-                      graph.toast("Jam needs the Nearby devices and Location permissions")
+                      graph.toast("Jam needs Nearby devices and Location (approximate is fine). You can allow them in the app's settings.")
                   }
                   pendingAction = null
               }
 
               fun withPermissions(action: () -> Unit) {
-                  val missing = jamPermissions().filter { ContextCompat.checkSelfPermission(ctx, it) != PackageManager.PERMISSION_GRANTED }
+                  val missing = jamPermissions().filter {
+                      it != Manifest.permission.ACCESS_FINE_LOCATION && ContextCompat.checkSelfPermission(ctx, it) != PackageManager.PERMISSION_GRANTED
+                  }
                   if (missing.isEmpty()) action() else {
                       pendingAction = action
                       launcher.launch(jamPermissions())
