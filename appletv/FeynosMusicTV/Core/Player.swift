@@ -60,6 +60,14 @@ final class Player: ObservableObject {
 
     func play(_ songs: [Song], start: Int = 0, shuffle: Bool = false) {
         guard !songs.isEmpty else { return }
+        if JamHost.shared.active && !queue.isEmpty {
+            // In a jam, playing something slots it in now without wiping everyone's queue.
+            let picked = shuffle ? songs.shuffled() : Array(songs.dropFirst(min(max(start, 0), songs.count - 1)))
+            JamHost.shared.noteLocal(picked)
+            insert(picked, at: nil, jump: true)
+            startedCount += 1
+            return
+        }
         if shuffle {
             unshuffled = songs
             queue = songs.shuffled()
@@ -75,17 +83,36 @@ final class Player: ObservableObject {
     }
 
     func playNext(_ songs: [Song]) {
-        guard !songs.isEmpty else { return }
-        if queue.isEmpty { return play(songs) }
-        queue.insert(contentsOf: songs, at: index + 1)
-        unshuffled?.append(contentsOf: songs)
+        JamHost.shared.noteLocal(songs)
+        insert(songs, at: nil, jump: false)
     }
 
     func addToQueue(_ songs: [Song]) {
-        guard !songs.isEmpty else { return }
-        if queue.isEmpty { return play(songs) }
-        queue.append(contentsOf: songs)
+        JamHost.shared.noteLocal(songs)
+        insert(songs, at: Int.max, jump: false)
+    }
+
+    /// Inserts songs at `at` (nil = right after the current song, past the end = append),
+    /// optionally jumping to the first. Returns the index just after the inserted block.
+    @discardableResult
+    func insert(_ songs: [Song], at: Int?, jump: Bool) -> Int {
+        guard !songs.isEmpty else { return index + 1 }
+        if queue.isEmpty {
+            queue = songs
+            index = 0
+            unshuffled = nil
+            load(autoplay: true)
+            return songs.count
+        }
+        let pos = min(max(at ?? index + 1, 0), queue.count)
+        queue.insert(contentsOf: songs, at: pos)
         unshuffled?.append(contentsOf: songs)
+        if pos <= index && !jump { index += songs.count }
+        if jump {
+            index = pos
+            load(autoplay: true)
+        }
+        return pos + songs.count
     }
 
     func toggle() {
@@ -266,11 +293,19 @@ final class Player: ObservableObject {
         let threshold = total > 0 ? min(total / 2, 240) : 240
         guard playedSeconds >= threshold, playedSeconds >= 10 else { return }
         submitted = true
-        recordListen(song, at: startedAt)
+        if let guest = JamHost.shared.creditFor(song.id) {
+            JamHost.shared.sendListen(guest, song: song, at: startedAt)
+        } else {
+            recordListen(song, at: startedAt)
+        }
     }
 
     private func sendNowPlaying(_ song: Song) {
         nowPlayingSent = true
+        if let guest = JamHost.shared.creditFor(song.id) {
+            JamHost.shared.sendNowPlaying(guest, song: song)
+            return
+        }
         let s = AppSettings.shared
         Task {
             if s.scrobbleNavidrome { try? await Subsonic.shared.scrobble(song.id, at: Date(), submission: false) }

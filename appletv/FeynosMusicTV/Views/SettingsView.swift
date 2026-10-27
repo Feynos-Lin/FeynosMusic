@@ -5,6 +5,7 @@ struct SettingsView: View {
     @EnvironmentObject var mixes: Mixes
     @EnvironmentObject var covers: Covers
     @EnvironmentObject var store: Store
+    @EnvironmentObject var jam: JamHost
     @State var lbToken = ""
     @State var lbBusy = false
     @State var confirmSignOut = false
@@ -12,6 +13,21 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    if jam.active {
+                        LabeledContent("Jam is live", value: "\(jam.people.count) \(jam.people.count == 1 ? "person" : "people")")
+                        ForEach(jam.guests, id: \.self) { Text($0) }
+                        Button("End Jam", role: .destructive) { jam.stop() }
+                    } else {
+                        Button("Start a Jam") { jam.start() }
+                    }
+                    if let e = jam.error { Text(e).foregroundStyle(.red) }
+                } header: {
+                    Text("Jam")
+                } footer: {
+                    Text("Friends on the same Wi-Fi open Jam in Feynos Music on their phone, tap Join a jam and pick this Apple TV. Everyone can add songs, skip and control the music, and each person's listens go to their own history.")
+                }
+
                 Section("Navidrome") {
                     LabeledContent("Server", value: settings.serverUrl)
                     LabeledContent("User", value: settings.username)

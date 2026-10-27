@@ -14,6 +14,7 @@ struct FeynosMusicTVApp: App {
                 .environmentObject(Covers.shared)
                 .environmentObject(AppState.shared)
                 .environmentObject(Toaster.shared)
+                .environmentObject(JamHost.shared)
                 .tint(Color(red: 0.66, green: 0.44, blue: 1.0))
                 .preferredColorScheme(.dark)
         }

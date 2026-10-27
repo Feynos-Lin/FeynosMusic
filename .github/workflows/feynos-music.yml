@@ -169,6 +169,7 @@ jobs:
               <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
               <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
               <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES" />
+              <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
 
               <application
                   android:name=".App"
@@ -2200,6 +2201,27 @@ jobs:
               private var lastSig = ""
               private var lastSent = 0L
 
+              /** Jam over local Wi-Fi (works with the Apple TV). Runs alongside Bluetooth/Nearby. */
+              private val wifi: WifiJam by lazy {
+                  WifiJam(
+                      g.app,
+                      onConnected = { id ->
+                          // Host: a guest connected over Wi-Fi; its name arrives in its "hello".
+                          if (isHost) pendingNames[id] = "Guest"
+                      },
+                      onMessage = { id, line ->
+                          val msg = runCatching { AppJson.parseToJsonElement(line) }.getOrNull()
+                          if (msg != null) {
+                              when {
+                                  isHost -> onHostMessage(id, msg)
+                                  isGuest && id == hostEndpoint -> onGuestMessage(msg)
+                              }
+                          }
+                      },
+                      onDisconnected = { id -> lifecycle.onDisconnected(id) },
+                  )
+              }
+
               private fun myName(): String = g.settings.current.username.ifBlank { Build.MODEL ?: "Phone" }
 
               // ---------------- Nearby callbacks (all delivered on the main thread) ----------------
@@ -2297,9 +2319,10 @@ jobs:
                       "${myName()}'s jam", SERVICE_ID, lifecycle,
                       AdvertisingOptions.Builder().setStrategy(Strategy.P2P_STAR).build(),
                   ).addOnFailureListener { e ->
-                      stopBroadcasting()
-                      _state.value = JamState(error = "Couldn't start the jam: ${e.message}")
+                      // Wi-Fi guests (and the Apple TV) can still join.
+                      _state.update { it.copy(error = "Bluetooth jam unavailable (${e.message}). Phones on the same Wi-Fi can still join.") }
                   }
+                  wifi.host("${myName()}'s jam") { err -> _state.update { it.copy(error = err) } }
                   startBroadcasting()
               }
 
@@ -2308,16 +2331,53 @@ jobs:
                   found.clear()
                   _state.value = JamState(searching = true)
                   client.startDiscovery(SERVICE_ID, discovery, DiscoveryOptions.Builder().setStrategy(Strategy.P2P_STAR).build())
-                      .addOnFailureListener { e -> _state.update { it.copy(searching = false, error = "Couldn't search: ${e.message}") } }
+                      .addOnFailureListener { e ->
+                          _state.update { it.copy(error = "Bluetooth search unavailable (${e.message}). Still looking on Wi-Fi…") }
+                      }
+                  wifi.discover(
+                      onFound = { id, name ->
+                          found[id] = "$name (Wi-Fi)"
+                          publishFound()
+                      },
+                      onLost = { id ->
+                          found.remove(id)
+                          publishFound()
+                      },
+                  )
               }
 
               fun stopSearching() {
                   runCatching { client.stopDiscovery() }
+                  wifi.stopDiscovery()
                   _state.update { it.copy(searching = false, found = emptyList()) }
               }
 
               fun join(endpoint: JamEndpoint) {
                   _state.update { it.copy(connectingTo = endpoint.id, error = null) }
+                  if (wifi.isWifi(endpoint.id)) {
+                      wifi.connect(endpoint.id) { ok, err ->
+                          if (ok) {
+                              hostEndpoint = endpoint.id
+                              runCatching { client.stopDiscovery() }
+                              wifi.stopDiscovery()
+                              g.player.pauseLocal()
+                              _state.update {
+                                  it.copy(
+                                      role = JamRole.GUEST, searching = false, connectingTo = null, error = null,
+                                      hostName = endpoint.name.removeSuffix(" (Wi-Fi)").removeSuffix("'s jam"),
+                                  )
+                              }
+                              send(listOf(endpoint.id), buildJsonObject {
+                                  put("t", "hello")
+                                  put("name", myName())
+                              })
+                              g.toast("Joined the jam")
+                          } else {
+                              _state.update { it.copy(connectingTo = null, error = err ?: "Couldn't join") }
+                          }
+                      }
+                      return
+                  }
                   client.requestConnection(myName(), endpoint.id, lifecycle).addOnFailureListener { e ->
                       _state.update { it.copy(connectingTo = null, error = "Couldn't join: ${e.message}") }
                   }
@@ -2339,6 +2399,7 @@ jobs:
                   runCatching { client.stopAdvertising() }
                   runCatching { client.stopDiscovery() }
                   runCatching { client.stopAllEndpoints() }
+                  wifi.stopAll()
                   members.clear(); found.clear(); addedBy.clear(); cursors.clear(); pendingNames.clear()
                   hostEndpoint = null
                   _state.value = JamState()
@@ -2349,7 +2410,12 @@ jobs:
 
               private fun send(to: List<String>, msg: JsonObject) {
                   if (to.isEmpty()) return
-                  runCatching { client.sendPayload(to, Payload.fromBytes(msg.toString().toByteArray(Charsets.UTF_8))) }
+                  val text = msg.toString()
+                  val (overWifi, overNearby) = to.partition { wifi.isWifi(it) }
+                  overWifi.forEach { wifi.send(it, text) }
+                  if (overNearby.isNotEmpty()) {
+                      runCatching { client.sendPayload(overNearby, Payload.fromBytes(text.toByteArray(Charsets.UTF_8))) }
+                  }
               }
 
               private fun compact(s: Song) = s.copy(starred = null, playCount = null, musicBrainzId = null, bitRate = null)
@@ -2379,6 +2445,15 @@ jobs:
               })
 
               private fun onHostMessage(endpoint: String, m: JsonElement) {
+                  if (m["t"].str == "hello") {
+                      val name = m["name"].str?.takeIf { it.isNotBlank() } ?: "Guest"
+                      val isNew = endpoint !in members
+                      members[endpoint] = name
+                      publish()
+                      if (isNew) g.toast("$name joined the jam")
+                      broadcast(force = true)
+                      return
+                  }
                   if (m["t"].str != "cmd") return
                   val p = g.player
                   val name = members[endpoint] ?: "Guest"
@@ -2539,7 +2614,205 @@ jobs:
               }
           }
           FEYNOS_EOF_026
-          cat > 'app/src/main/java/com/feynos/music/player/MediaItems.kt' <<'FEYNOS_EOF_027'
+          cat > 'app/src/main/java/com/feynos/music/jam/WifiJam.kt' <<'FEYNOS_EOF_027'
+          package com.feynos.music.jam
+
+          import android.content.Context
+          import android.net.nsd.NsdManager
+          import android.net.nsd.NsdServiceInfo
+          import android.net.wifi.WifiManager
+          import android.os.Handler
+          import android.os.Looper
+          import java.io.BufferedReader
+          import java.io.BufferedWriter
+          import java.io.InputStreamReader
+          import java.io.OutputStreamWriter
+          import java.net.InetSocketAddress
+          import java.net.ServerSocket
+          import java.net.Socket
+          import java.util.concurrent.ConcurrentHashMap
+          import java.util.concurrent.Executors
+          import java.util.concurrent.atomic.AtomicInteger
+
+          /**
+           * Jam over the local Wi-Fi network: the host runs a small TCP server advertised with
+           * Bonjour / NSD ("_feynosjam._tcp"), guests find it and connect. Messages are the same
+           * JSON as the Bluetooth (Nearby) transport, one per line. This is how the Apple TV
+           * talks to phones. All callbacks are delivered on the main thread.
+           */
+          class WifiJam(
+              context: Context,
+              private val onConnected: (id: String) -> Unit,
+              private val onMessage: (id: String, line: String) -> Unit,
+              private val onDisconnected: (id: String) -> Unit,
+          ) {
+              companion object {
+                  const val SERVICE_TYPE = "_feynosjam._tcp."
+                  const val PREFIX = "wifi:"
+              }
+
+              private val app = context.applicationContext
+              private val nsd = app.getSystemService(NsdManager::class.java)
+              private val main = Handler(Looper.getMainLooper())
+              private val io = Executors.newCachedThreadPool()
+              private val counter = AtomicInteger(0)
+
+              private class Peer(val socket: Socket, val writer: BufferedWriter)
+
+              private val peers = ConcurrentHashMap<String, Peer>()
+              private val services = ConcurrentHashMap<String, NsdServiceInfo>()
+              private var server: ServerSocket? = null
+              private var registration: NsdManager.RegistrationListener? = null
+              private var discovery: NsdManager.DiscoveryListener? = null
+              private var multicast: WifiManager.MulticastLock? = null
+
+              // ---------------- Host ----------------
+
+              fun host(name: String, onError: (String) -> Unit) {
+                  try {
+                      val s = ServerSocket(0)
+                      server = s
+                      io.execute {
+                          while (!s.isClosed) {
+                              val socket = try { s.accept() } catch (e: Exception) { break }
+                              attach("$PREFIX${counter.incrementAndGet()}", socket, announce = true)
+                          }
+                      }
+                      val info = NsdServiceInfo().apply {
+                          serviceName = name
+                          serviceType = SERVICE_TYPE
+                          port = s.localPort
+                      }
+                      val listener = object : NsdManager.RegistrationListener {
+                          override fun onServiceRegistered(info: NsdServiceInfo) {}
+                          override fun onRegistrationFailed(info: NsdServiceInfo, errorCode: Int) {
+                              main.post { onError("Wi-Fi jam unavailable (code $errorCode)") }
+                          }
+                          override fun onServiceUnregistered(info: NsdServiceInfo) {}
+                          override fun onUnregistrationFailed(info: NsdServiceInfo, errorCode: Int) {}
+                      }
+                      registration = listener
+                      nsd?.registerService(info, NsdManager.PROTOCOL_DNS_SD, listener)
+                  } catch (e: Exception) {
+                      onError("Wi-Fi jam unavailable: ${e.message}")
+                  }
+              }
+
+              // ---------------- Guest ----------------
+
+              fun discover(onFound: (id: String, name: String) -> Unit, onLost: (id: String) -> Unit) {
+                  stopDiscovery()
+                  runCatching {
+                      multicast = app.getSystemService(WifiManager::class.java)?.createMulticastLock("feynos-jam")?.apply {
+                          setReferenceCounted(false)
+                          acquire()
+                      }
+                  }
+                  val listener = object : NsdManager.DiscoveryListener {
+                      override fun onDiscoveryStarted(serviceType: String) {}
+                      override fun onDiscoveryStopped(serviceType: String) {}
+                      override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {}
+                      override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) {}
+                      override fun onServiceFound(info: NsdServiceInfo) {
+                          if (!info.serviceType.contains("_feynosjam")) return
+                          val id = PREFIX + info.serviceName
+                          services[id] = info
+                          main.post { onFound(id, info.serviceName) }
+                      }
+                      override fun onServiceLost(info: NsdServiceInfo) {
+                          val id = PREFIX + info.serviceName
+                          services.remove(id)
+                          main.post { onLost(id) }
+                      }
+                  }
+                  discovery = listener
+                  runCatching { nsd?.discoverServices(SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, listener) }
+              }
+
+              fun stopDiscovery() {
+                  discovery?.let { d -> runCatching { nsd?.stopServiceDiscovery(d) } }
+                  discovery = null
+                  runCatching { multicast?.release() }
+                  multicast = null
+              }
+
+              @Suppress("DEPRECATION")
+              fun connect(id: String, onResult: (ok: Boolean, error: String?) -> Unit) {
+                  val info = services[id] ?: return onResult(false, "That jam is no longer available")
+                  nsd?.resolveService(info, object : NsdManager.ResolveListener {
+                      override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
+                          main.post { onResult(false, "Couldn't reach that jam (code $errorCode)") }
+                      }
+
+                      override fun onServiceResolved(resolved: NsdServiceInfo) {
+                          io.execute {
+                              try {
+                                  val socket = Socket()
+                                  socket.connect(InetSocketAddress(resolved.host, resolved.port), 8000)
+                                  attach(id, socket, announce = false)
+                                  main.post { onResult(true, null) }
+                              } catch (e: Exception) {
+                                  main.post { onResult(false, "Couldn't connect: ${e.message}") }
+                              }
+                          }
+                      }
+                  }) ?: onResult(false, "Wi-Fi discovery isn't available on this phone")
+              }
+
+              // ---------------- Both ----------------
+
+              private fun attach(id: String, socket: Socket, announce: Boolean) {
+                  socket.tcpNoDelay = true
+                  val writer = BufferedWriter(OutputStreamWriter(socket.getOutputStream(), Charsets.UTF_8))
+                  peers[id] = Peer(socket, writer)
+                  if (announce) main.post { onConnected(id) }
+                  io.execute {
+                      try {
+                          val reader = BufferedReader(InputStreamReader(socket.getInputStream(), Charsets.UTF_8))
+                          while (true) {
+                              val line = reader.readLine() ?: break
+                              if (line.isNotBlank()) main.post { onMessage(id, line) }
+                          }
+                      } catch (_: Exception) {
+                      }
+                      if (peers.remove(id) != null) main.post { onDisconnected(id) }
+                      runCatching { socket.close() }
+                  }
+              }
+
+              fun isWifi(id: String) = id.startsWith(PREFIX)
+
+              fun send(id: String, line: String) {
+                  val p = peers[id] ?: return
+                  io.execute {
+                      try {
+                          synchronized(p) {
+                              p.writer.write(line)
+                              p.writer.write("\n")
+                              p.writer.flush()
+                          }
+                      } catch (_: Exception) {
+                          runCatching { p.socket.close() }
+                      }
+                  }
+              }
+
+              fun disconnect(id: String) {
+                  peers.remove(id)?.let { p -> runCatching { p.socket.close() } }
+              }
+
+              fun stopAll() {
+                  stopDiscovery()
+                  registration?.let { r -> runCatching { nsd?.unregisterService(r) } }
+                  registration = null
+                  runCatching { server?.close() }
+                  server = null
+                  peers.keys.toList().forEach { disconnect(it) }
+                  services.clear()
+              }
+          }
+          FEYNOS_EOF_027
+          cat > 'app/src/main/java/com/feynos/music/player/MediaItems.kt' <<'FEYNOS_EOF_028'
           package com.feynos.music.player
 
           import android.content.Context
@@ -2618,8 +2891,8 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_027
-          cat > 'app/src/main/java/com/feynos/music/player/PlaybackService.kt' <<'FEYNOS_EOF_028'
+          FEYNOS_EOF_028
+          cat > 'app/src/main/java/com/feynos/music/player/PlaybackService.kt' <<'FEYNOS_EOF_029'
           package com.feynos.music.player
 
           import android.app.PendingIntent
@@ -2847,8 +3120,8 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_028
-          cat > 'app/src/main/java/com/feynos/music/player/PlayerController.kt' <<'FEYNOS_EOF_029'
+          FEYNOS_EOF_029
+          cat > 'app/src/main/java/com/feynos/music/player/PlayerController.kt' <<'FEYNOS_EOF_030'
           package com.feynos.music.player
 
           import android.content.ComponentName
@@ -3221,8 +3494,8 @@ jobs:
                   c.clearMediaItems()
               }
           }
-          FEYNOS_EOF_029
-          cat > 'app/src/main/java/com/feynos/music/update/Updater.kt' <<'FEYNOS_EOF_030'
+          FEYNOS_EOF_030
+          cat > 'app/src/main/java/com/feynos/music/update/Updater.kt' <<'FEYNOS_EOF_031'
           package com.feynos.music.update
 
           import android.content.Context
@@ -3308,8 +3581,8 @@ jobs:
                   return true
               }
           }
-          FEYNOS_EOF_030
-          cat > 'app/src/main/java/com/feynos/music/work/Workers.kt' <<'FEYNOS_EOF_031'
+          FEYNOS_EOF_031
+          cat > 'app/src/main/java/com/feynos/music/work/Workers.kt' <<'FEYNOS_EOF_032'
           package com.feynos.music.work
 
           import android.content.Context
@@ -3454,12 +3727,12 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_031
+          FEYNOS_EOF_032
 
       - name: Write user interface
         run: |
           mkdir -p "app/src/main/java/com/feynos/music/ui"
-          cat > 'app/src/main/java/com/feynos/music/ui/Components.kt' <<'FEYNOS_EOF_032'
+          cat > 'app/src/main/java/com/feynos/music/ui/Components.kt' <<'FEYNOS_EOF_033'
           @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
           package com.feynos.music.ui
@@ -3927,8 +4200,8 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_032
-          cat > 'app/src/main/java/com/feynos/music/ui/CoverArtScreens.kt' <<'FEYNOS_EOF_033'
+          FEYNOS_EOF_033
+          cat > 'app/src/main/java/com/feynos/music/ui/CoverArtScreens.kt' <<'FEYNOS_EOF_034'
           @file:OptIn(ExperimentalMaterial3Api::class)
 
           package com.feynos.music.ui
@@ -4123,8 +4396,8 @@ jobs:
                   modifier = Modifier.clickable(onClick = onClick),
               )
           }
-          FEYNOS_EOF_033
-          cat > 'app/src/main/java/com/feynos/music/ui/DetailScreens.kt' <<'FEYNOS_EOF_034'
+          FEYNOS_EOF_034
+          cat > 'app/src/main/java/com/feynos/music/ui/DetailScreens.kt' <<'FEYNOS_EOF_035'
           @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
           package com.feynos.music.ui
@@ -4582,8 +4855,8 @@ jobs:
                   DownloadsContent()
               }
           }
-          FEYNOS_EOF_034
-          cat > 'app/src/main/java/com/feynos/music/ui/ForYouScreens.kt' <<'FEYNOS_EOF_035'
+          FEYNOS_EOF_035
+          cat > 'app/src/main/java/com/feynos/music/ui/ForYouScreens.kt' <<'FEYNOS_EOF_036'
           @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
           package com.feynos.music.ui
@@ -4987,8 +5260,8 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_035
-          cat > 'app/src/main/java/com/feynos/music/ui/JamScreen.kt' <<'FEYNOS_EOF_036'
+          FEYNOS_EOF_036
+          cat > 'app/src/main/java/com/feynos/music/ui/JamScreen.kt' <<'FEYNOS_EOF_037'
           @file:OptIn(ExperimentalMaterial3Api::class)
 
           package com.feynos.music.ui
@@ -5043,7 +5316,9 @@ jobs:
                   if (jamPermissions().filter { it != Manifest.permission.ACCESS_FINE_LOCATION }.all { result[it] == true || ContextCompat.checkSelfPermission(ctx, it) == PackageManager.PERMISSION_GRANTED }) {
                       pendingAction?.invoke()
                   } else {
-                      graph.toast("Jam needs Nearby devices and Location (approximate is fine). You can allow them in the app's settings.")
+                      // Without these, Bluetooth jams won't work, but Wi-Fi jams (and the Apple TV) still will.
+                      graph.toast("Bluetooth jams need Nearby devices and Location. Using Wi-Fi only.")
+                      pendingAction?.invoke()
                   }
                   pendingAction = null
               }
@@ -5117,7 +5392,7 @@ jobs:
                                           Text("Looking for jams nearby…", fontWeight = FontWeight.Bold)
                                       }
                                       Text(
-                                          "Keep both phones close with Bluetooth on. The other phone needs to tap Start a jam.",
+                                          "Phones nearby show up over Bluetooth; jams on the same Wi-Fi (including an Apple TV) show up with \"(Wi-Fi)\". The other device needs to tap Start a jam.",
                                           style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                                       )
                                   }
@@ -5209,8 +5484,8 @@ jobs:
                   )
               }
           }
-          FEYNOS_EOF_036
-          cat > 'app/src/main/java/com/feynos/music/ui/MainScreens.kt' <<'FEYNOS_EOF_037'
+          FEYNOS_EOF_037
+          cat > 'app/src/main/java/com/feynos/music/ui/MainScreens.kt' <<'FEYNOS_EOF_038'
           @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
           package com.feynos.music.ui
@@ -5803,8 +6078,8 @@ jobs:
                   dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
               )
           }
-          FEYNOS_EOF_037
-          cat > 'app/src/main/java/com/feynos/music/ui/NowPlaying.kt' <<'FEYNOS_EOF_038'
+          FEYNOS_EOF_038
+          cat > 'app/src/main/java/com/feynos/music/ui/NowPlaying.kt' <<'FEYNOS_EOF_039'
           @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
           package com.feynos.music.ui
@@ -6211,8 +6486,8 @@ jobs:
                   dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
               )
           }
-          FEYNOS_EOF_038
-          cat > 'app/src/main/java/com/feynos/music/ui/SettingsScreen.kt' <<'FEYNOS_EOF_039'
+          FEYNOS_EOF_039
+          cat > 'app/src/main/java/com/feynos/music/ui/SettingsScreen.kt' <<'FEYNOS_EOF_040'
           @file:OptIn(ExperimentalMaterial3Api::class)
 
           package com.feynos.music.ui
@@ -6473,8 +6748,8 @@ jobs:
                   confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
               )
           }
-          FEYNOS_EOF_039
-          cat > 'app/src/main/java/com/feynos/music/ui/Shell.kt' <<'FEYNOS_EOF_040'
+          FEYNOS_EOF_040
+          cat > 'app/src/main/java/com/feynos/music/ui/Shell.kt' <<'FEYNOS_EOF_041'
           @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
           package com.feynos.music.ui
@@ -6788,8 +7063,8 @@ jobs:
                   dismissButton = { TextButton(onClick = onDismiss, enabled = progress == null) { Text("Later") } },
               )
           }
-          FEYNOS_EOF_040
-          cat > 'app/src/main/java/com/feynos/music/ui/Theme.kt' <<'FEYNOS_EOF_041'
+          FEYNOS_EOF_041
+          cat > 'app/src/main/java/com/feynos/music/ui/Theme.kt' <<'FEYNOS_EOF_042'
           package com.feynos.music.ui
 
           import android.os.Build
@@ -6834,7 +7109,7 @@ jobs:
                   CompositionLocalProvider(LocalContentColor provides scheme.onBackground, content = content)
               }
           }
-          FEYNOS_EOF_041
+          FEYNOS_EOF_042
 
       - name: Set up Java 17
         uses: actions/setup-java@v4

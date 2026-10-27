@@ -3,6 +3,7 @@ import SwiftUI
 struct NowPlayingView: View {
     @EnvironmentObject var player: Player
     @EnvironmentObject var store: Store
+    @EnvironmentObject var jam: JamHost
     @State var panel = 0
 
     var body: some View {
@@ -21,6 +22,10 @@ struct NowPlayingView: View {
                             CoverImage(coverArt: song.coverArt, albumId: song.albumId, size: 1000, corner: 16)
                                 .frame(width: 560, height: 560)
                                 .shadow(radius: 30)
+                            if jam.active {
+                                Label("Jam · \(jam.people.joined(separator: ", "))", systemImage: "person.3.fill")
+                                    .font(.caption).foregroundStyle(Color.accentColor).lineLimit(1)
+                            }
                             Text(song.name).font(.title2).bold().lineLimit(2)
                             HStack(spacing: 20) {
                                 if let artistId = song.artistId {
@@ -145,6 +150,7 @@ private struct LyricsPanel: View {
 
 private struct QueuePanel: View {
     @EnvironmentObject var player: Player
+    @EnvironmentObject var jam: JamHost
 
     var body: some View {
         let next = player.upNext
@@ -160,7 +166,9 @@ private struct QueuePanel: View {
                     }
                     ForEach(next.map { QueueItem(index: $0.0, song: $0.1) }) { item in
                         let i = item.index
-                        SongRow(song: item.song) { player.skipTo(i) }
+                        SongRow(song: item.song, subtitle: jam.addedBy[item.song.id].map { "\(item.song.artistName) · added by \($0)" }) {
+                            player.skipTo(i)
+                        }
                             .contextMenu {
                                 Button { player.move(from: i, to: i - 1) } label: { Label("Move Up", systemImage: "arrow.up") }
                                 Button { player.move(from: i, to: i + 1) } label: { Label("Move Down", systemImage: "arrow.down") }

@@ -26,6 +26,8 @@ targets:
         UIBackgroundModes: [audio]
         UILaunchScreen: {}
         UIUserInterfaceStyle: Dark
+        NSLocalNetworkUsageDescription: Feynos Music uses your local network so phones can join a Jam and control the music.
+        NSBonjourServices: [_feynosjam._tcp]
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
     settings:
