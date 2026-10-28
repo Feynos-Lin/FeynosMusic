@@ -15,6 +15,7 @@
 		71D8D5D8269691A88982672D /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8A975A51CD9FC16ADE4BE9F /* Components.swift */; };
 		72613F02505B3E15EE3F2702 /* Smart.swift in Sources */ = {isa = PBXBuildFile; fileRef = 224012A3A66DF228E90C7095 /* Smart.swift */; };
 		7C02FC14ECDC7AC098C7174F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E5F35FE94CC68F628BBCAE55 /* Assets.xcassets */; };
+		7D5BE887C6423BCEFC0B6641 /* Themes.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4081FC16DAAA047EA96AE05 /* Themes.swift */; };
 		88022F8FEF7BF49E5C1D35FA /* MainScreens.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5979CC188C30280CBC810D76 /* MainScreens.swift */; };
 		8B8D94618196E77E2D2F9B58 /* Store.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D585207336A60248C41C733 /* Store.swift */; };
 		93264D7A468BF8C566DA043A /* Player.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FBE0558DA60FBC2DC734126 /* Player.swift */; };
@@ -42,6 +43,7 @@
 		A19316A6EB309A2417FE16D1 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		A7621D4A1DE21CCDF40A3F7F /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		D3D3C465C386C8591905A8EB /* AppRoot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRoot.swift; sourceTree = "<group>"; };
+		D4081FC16DAAA047EA96AE05 /* Themes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Themes.swift; sourceTree = "<group>"; };
 		E5F35FE94CC68F628BBCAE55 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		E8A975A51CD9FC16ADE4BE9F /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -66,6 +68,7 @@
 				224012A3A66DF228E90C7095 /* Smart.swift */,
 				7D585207336A60248C41C733 /* Store.swift */,
 				0A199FD2872D4BD51ACFFA76 /* Subsonic.swift */,
+				D4081FC16DAAA047EA96AE05 /* Themes.swift */,
 				7324C18B76AC8F28448E635F /* Util.swift */,
 			);
 			path = Core;
@@ -188,6 +191,7 @@
 				72613F02505B3E15EE3F2702 /* Smart.swift in Sources */,
 				8B8D94618196E77E2D2F9B58 /* Store.swift in Sources */,
 				A30A6D9E2F1F6649DA02C4C0 /* Subsonic.swift in Sources */,
+				7D5BE887C6423BCEFC0B6641 /* Themes.swift in Sources */,
 				E065A3CB1758A4DBB3ED21BA /* Util.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
