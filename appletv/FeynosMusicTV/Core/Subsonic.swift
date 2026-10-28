@@ -47,7 +47,7 @@ final class Subsonic {
 
     // ---- Account ----
 
-    func login(server: String, user: String, password: String) async throws {
+    func login(server: String, user: String, password: String, profileName: String = "") async throws {
         var raw = server.trimmingCharacters(in: .whitespaces)
         while raw.hasSuffix("/") { raw.removeLast() }
         let candidates = raw.hasPrefix("http://") || raw.hasPrefix("https://") ? [raw] : ["https://\(raw)", "http://\(raw)"]
@@ -58,10 +58,7 @@ final class Subsonic {
             let creds = Creds(server: c, user: user.trimmingCharacters(in: .whitespaces), token: token, salt: salt)
             do {
                 try await call("ping", creds: creds)
-                s.serverUrl = creds.server
-                s.username = creds.user
-                s.token = token
-                s.salt = salt
+                s.addProfile(name: profileName, server: creds.server, user: creds.user, token: token, salt: salt)
                 return
             } catch {
                 last = error

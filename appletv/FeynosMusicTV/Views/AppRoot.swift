@@ -36,7 +36,14 @@ struct RootView: View {
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            if settings.loggedIn { MainTabs() } else { LoginView() }
+            if settings.addingProfile || settings.profiles.isEmpty || !settings.loggedIn {
+                LoginView()
+            } else if !settings.picked {
+                ProfilePicker()
+            } else {
+                MainTabs()
+                    .id(settings.currentId)
+            }
             if let m = toaster.message {
                 Text(m)
                     .font(.headline)
@@ -82,6 +89,8 @@ struct MainTabs: View {
 }
 
 struct LoginView: View {
+    @EnvironmentObject var settings: AppSettings
+    @State var profileName = ""
     @State var server = ""
     @State var user = ""
     @State var password = ""
@@ -97,12 +106,16 @@ struct LoginView: View {
                     .frame(width: 180, height: 180)
                     .background(RoundedRectangle(cornerRadius: 40).fill(Color(red: 0.42, green: 0.24, blue: 0.88)))
                 Text("Feynos Music").font(.largeTitle).bold()
-                Text("Sign in to your Navidrome server").font(.title3).foregroundStyle(.secondary)
+                Text(settings.profiles.isEmpty ? "Sign in to your Navidrome server" : "Add a profile").font(.title3).foregroundStyle(.secondary)
+                Text("Each profile has its own login, ListenBrainz account, history and mixes, so everyone in the house gets their own.")
+                    .font(.caption).foregroundStyle(.secondary)
                 Text("If you leave out http:// or https://, both are tried. Your password isn't stored, only a salted token.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             .frame(maxWidth: 700)
             VStack(spacing: 24) {
+                TextField("Profile name (e.g. Mike)", text: $profileName)
+                    .autocorrectionDisabled()
                 TextField("Server address (e.g. 192.168.1.10:4533)", text: $server)
                     .textContentType(.URL)
                     .autocorrectionDisabled()
@@ -116,7 +129,7 @@ struct LoginView: View {
                         busy = true
                         error = nil
                         do {
-                            try await Subsonic.shared.login(server: server, user: user, password: password)
+                            try await Subsonic.shared.login(server: server, user: user, password: password, profileName: profileName)
                         } catch {
                             self.error = error.localizedDescription
                         }
@@ -127,6 +140,12 @@ struct LoginView: View {
                 }
                 .disabled(busy || server.isEmpty || user.isEmpty)
                 if let error { Text(error).foregroundStyle(.red) }
+                if !settings.profiles.isEmpty {
+                    Button("Cancel") {
+                        settings.addingProfile = false
+                        if !settings.loggedIn, let first = settings.profiles.first { settings.switchTo(first.id) }
+                    }
+                }
             }
             .frame(maxWidth: 800)
         }
@@ -181,6 +200,68 @@ struct AddToPlaylistSheet: View {
                 }
             }
             .navigationTitle("Add to Playlist")
+        }
+    }
+}
+
+/// "Who's listening?" screen shown when the TV has more than one profile.
+struct ProfilePicker: View {
+    @EnvironmentObject var settings: AppSettings
+    @State var renaming: Profile?
+    @State var newName = ""
+
+    var body: some View {
+        VStack(spacing: 60) {
+            Text("Who's listening?").font(.system(size: 64, weight: .heavy))
+            HStack(spacing: 50) {
+                ForEach(settings.profiles) { p in
+                    Button { settings.switchTo(p.id) } label: {
+                        VStack(spacing: 16) {
+                            Text(String(p.name.prefix(1)).uppercased())
+                                .font(.system(size: 90, weight: .heavy))
+                                .foregroundStyle(.white)
+                                .frame(width: 220, height: 220)
+                                .background(color(for: p.id))
+                                .clipShape(RoundedRectangle(cornerRadius: 30))
+                            Text(p.name).font(.headline)
+                            Text("\(p.username) · \(p.host)").font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                        }
+                        .frame(width: 260)
+                        .padding(20)
+                    }
+                    .buttonStyle(.card)
+                    .contextMenu {
+                        Button { newName = p.name; renaming = p } label: { Label("Rename", systemImage: "pencil") }
+                        Button(role: .destructive) { settings.remove(p.id) } label: { Label("Remove profile", systemImage: "trash") }
+                    }
+                }
+                Button { settings.addingProfile = true } label: {
+                    VStack(spacing: 16) {
+                        Image(systemName: "plus")
+                            .font(.system(size: 80, weight: .bold))
+                            .frame(width: 220, height: 220)
+                            .background(Color.white.opacity(0.1))
+                            .clipShape(RoundedRectangle(cornerRadius: 30))
+                        Text("Add profile").font(.headline)
+                        Text(" ").font(.caption2)
+                    }
+                    .frame(width: 260)
+                    .padding(20)
+                }
+                .buttonStyle(.card)
+            }
+            Text("Press and hold a profile to rename or remove it.").font(.caption).foregroundStyle(.secondary)
+        }
+        .sheet(item: $renaming) { p in
+            VStack(spacing: 30) {
+                Text("Rename \(p.name)").font(.title2).bold()
+                TextField("Name", text: $newName)
+                Button("Save") {
+                    settings.rename(p.id, to: newName)
+                    renaming = nil
+                }
+            }
+            .padding(80)
         }
     }
 }

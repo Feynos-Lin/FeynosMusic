@@ -28,10 +28,17 @@ struct SettingsView: View {
                     Text("Friends on the same Wi-Fi open Jam in Feynos Music on their phone, tap Join a jam and pick this Apple TV. Everyone can add songs, skip and control the music, and each person's listens go to their own history.")
                 }
 
-                Section("Navidrome") {
+                Section {
+                    LabeledContent("Profile", value: settings.current?.name ?? settings.username)
                     LabeledContent("Server", value: settings.serverUrl)
                     LabeledContent("User", value: settings.username)
-                    Button("Sign Out", role: .destructive) { confirmSignOut = true }
+                    Button("Switch Profile") { settings.picked = false }
+                    Button("Add Profile") { settings.addingProfile = true }
+                    Button("Remove This Profile", role: .destructive) { confirmSignOut = true }
+                } header: {
+                    Text("Profile")
+                } footer: {
+                    Text("Each profile has its own Navidrome login, ListenBrainz account, listening history, mixes and cover fixes. Playback settings below are shared.")
                 }
 
                 Section {
@@ -116,8 +123,8 @@ struct SettingsView: View {
             }
             .navigationTitle("Settings")
             .withRoutes()
-            .confirmationDialog("Sign out of \(settings.serverUrl)?", isPresented: $confirmSignOut) {
-                Button("Sign Out", role: .destructive) {
+            .confirmationDialog("Remove the profile \"\(settings.current?.name ?? settings.username)\" from this Apple TV?", isPresented: $confirmSignOut) {
+                Button("Remove Profile", role: .destructive) {
                     Player.shared.stop()
                     settings.signOut()
                 }

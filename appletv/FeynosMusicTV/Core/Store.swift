@@ -20,12 +20,41 @@ final class Store: ObservableObject {
         let at: Date
     }
 
+    private static let fileNames = ["plays", "mixes", "covers", "lbqueue", "matches"]
+
+    /// Each profile keeps its own files, e.g. "plays-<profile id>.json".
+    private static func file(_ base: String) -> String {
+        let id = AppSettings.shared.currentId
+        let name = "\(base)-\(id.isEmpty ? "none" : id).json"
+        // The first version stored one set of files; they belong to the migrated "default" profile.
+        if id == "default", !FileManager.default.fileExists(atPath: Disk.dir.appendingPathComponent(name).path),
+           FileManager.default.fileExists(atPath: Disk.dir.appendingPathComponent("\(base).json").path) {
+            try? FileManager.default.moveItem(at: Disk.dir.appendingPathComponent("\(base).json"), to: Disk.dir.appendingPathComponent(name))
+        }
+        return name
+    }
+
+    static func deleteFiles(for profileId: String) {
+        for base in fileNames { try? FileManager.default.removeItem(at: Disk.dir.appendingPathComponent("\(base)-\(profileId).json")) }
+    }
+
     private init() {
-        plays = Disk.load([Play].self, "plays.json") ?? []
-        mixes = Disk.load([Mix].self, "mixes.json") ?? []
-        covers = Disk.load([String: CoverEntry].self, "covers.json") ?? [:]
-        lbQueue = Disk.load([Data].self, "lbqueue.json") ?? []
-        matchCache = Disk.load([String: MatchEntry].self, "matches.json") ?? [:]
+        plays = Disk.load([Play].self, Store.file("plays")) ?? []
+        mixes = Disk.load([Mix].self, Store.file("mixes")) ?? []
+        covers = Disk.load([String: CoverEntry].self, Store.file("covers")) ?? [:]
+        lbQueue = Disk.load([Data].self, Store.file("lbqueue")) ?? []
+        matchCache = Disk.load([String: MatchEntry].self, Store.file("matches")) ?? [:]
+    }
+
+    /// Loads the current profile's data (after switching profiles).
+    func reload() {
+        plays = Disk.load([Play].self, Store.file("plays")) ?? []
+        mixes = Disk.load([Mix].self, Store.file("mixes")) ?? []
+        covers = Disk.load([String: CoverEntry].self, Store.file("covers")) ?? [:]
+        lbQueue = Disk.load([Data].self, Store.file("lbqueue")) ?? []
+        matchCache = Disk.load([String: MatchEntry].self, Store.file("matches")) ?? [:]
+        starOverrides = [:]
+        bump()
     }
 
     func bump() { version += 1 }
@@ -35,7 +64,7 @@ final class Store: ObservableObject {
     func addPlay(_ song: Song, at: Date) {
         plays.append(Play(song: song, at: at))
         if plays.count > 10_000 { plays.removeFirst(plays.count - 10_000) }
-        Disk.save(plays, "plays.json")
+        Disk.save(plays, Store.file("plays"))
     }
 
     func recentSongs(_ limit: Int) -> [Song] {
@@ -101,7 +130,7 @@ final class Store: ObservableObject {
 
     func saveMixes(_ list: [Mix]) {
         mixes = list
-        Disk.save(list, "mixes.json")
+        Disk.save(list, Store.file("mixes"))
         bump()
     }
 
@@ -113,14 +142,14 @@ final class Store: ObservableObject {
 
     func queueListen(_ body: Data) {
         lbQueue.append(body)
-        Disk.save(lbQueue, "lbqueue.json")
+        Disk.save(lbQueue, Store.file("lbqueue"))
     }
 
     func flushListens() async {
         while let first = lbQueue.first {
             guard await ListenBrainz.shared.submit(first) else { return }
             lbQueue.removeFirst()
-            Disk.save(lbQueue, "lbqueue.json")
+            Disk.save(lbQueue, Store.file("lbqueue"))
         }
     }
 
@@ -130,7 +159,7 @@ final class Store: ObservableObject {
 
     func cacheMatch(_ key: String, _ song: Song?) {
         matchCache[key] = MatchEntry(song: song, at: Date())
-        Disk.save(matchCache, "matches.json")
+        Disk.save(matchCache, Store.file("matches"))
     }
 
     // ---- Cover art ----
@@ -142,11 +171,11 @@ final class Store: ObservableObject {
 
     func setCover(_ entry: CoverEntry) {
         covers[entry.albumId] = entry
-        Disk.save(covers, "covers.json")
+        Disk.save(covers, Store.file("covers"))
     }
 
     func setCovers(_ entries: [String: CoverEntry]) {
         covers = entries
-        Disk.save(covers, "covers.json")
+        Disk.save(covers, Store.file("covers"))
     }
 }
