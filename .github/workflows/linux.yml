@@ -1,0 +1,55 @@
+name: Build Linux app
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'linux/**'
+      - '.github/workflows/linux.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  rpm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install rpm tooling
+        run: sudo apt-get update && sudo apt-get install -y rpm
+
+      - name: Install dependencies
+        working-directory: linux
+        run: npm install --no-audit --no-fund
+
+      - name: Set version
+        working-directory: linux
+        run: npm version 1.0.${{ github.run_number }} --no-git-tag-version --allow-same-version
+
+      - name: Build .rpm
+        working-directory: linux
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --linux rpm --x64 --publish never
+
+      - name: List output
+        run: ls -la linux/dist
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: linux-v1.0.${{ github.run_number }}
+          name: Feynos Music for Linux 1.0.${{ github.run_number }}
+          make_latest: false
+          body: |
+            Feynos Music desktop app for Linux (Fedora, RHEL, openSUSE and other RPM-based distros).
+
+            Install: download the .rpm below, then run
+            `sudo dnf install ./feynos-music-1.0.${{ github.run_number }}.x86_64.rpm`
+          files: linux/dist/*.rpm
