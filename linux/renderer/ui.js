@@ -195,7 +195,7 @@ const UI = {
   },
   mixArt(m) {
     const c = colorFor(m.id + m.title);
-    return `<div class="mixart" style="background:linear-gradient(135deg, ${c}, #0e0e12)"><div class="mt">${esc(m.title)}</div>${m.coverArt ? `<img src="${esc(artUrl(m.coverArt, null, 300) || '')}" alt="">` : ''}<div class="bar"></div></div>`;
+    return `<div class="mixart" style="background:linear-gradient(135deg, ${c}, #0e0e12)"><div class="mt">${esc(m.title)}</div>${m.coverArt ? `<img src="${esc(artUrl(m.coverArt, null, 300) || '')}" alt="" onerror="this.remove()">` : ''}<div class="bar"></div></div>`;
   },
   mixCard(m) {
     return `<div class="card" data-act="go-mix" data-id="${esc(m.id)}">${this.mixArt(m)}<div class="s" style="white-space:normal;margin-top:10px">${esc(m.description)}</div></div>`;
