@@ -51,5 +51,9 @@
         "--rpm-rpmbuild-define=_build_id_links none"
       ]
     }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Feynos-Lin/FeynosMusic.git"
   }
 }

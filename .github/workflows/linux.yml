@@ -39,7 +39,7 @@ jobs:
         run: |
           set -o pipefail
           if ! npx electron-builder --linux rpm --x64 --publish never 2>&1 | tee build.log; then
-            tail -n 40 build.log | sed 's/%/%25/g' | while IFS= read -r l; do echo "::error::$l"; done
+            echo "::error::$(grep -v '^\s*•' build.log | tail -n 60 | sed 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g')"
             exit 1
           fi
 
