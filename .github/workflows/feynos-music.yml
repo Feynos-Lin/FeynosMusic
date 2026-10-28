@@ -155,6 +155,7 @@ jobs:
               <uses-permission android:name="android.permission.WAKE_LOCK" />
               <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
               <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
               <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
               <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
@@ -201,6 +202,11 @@ jobs:
                           <action android:name="androidx.media3.session.MediaSessionService" />
                       </intent-filter>
                   </service>
+
+                  <service
+                      android:name=".jam.JamService"
+                      android:exported="false"
+                      android:foregroundServiceType="connectedDevice" />
 
                   <receiver
                       android:name=".widget.PlayerWidget"
@@ -2531,8 +2537,47 @@ jobs:
                               }
                           }
                       },
-                      onDisconnected = { id -> lifecycle.onDisconnected(id) },
+                      onDisconnected = { id ->
+                          // A Wi-Fi blip shouldn't kick a guest out: try to get back in first.
+                          if (isGuest && id == hostEndpoint && wifi.isWifi(id)) reconnect(id, 1) else lifecycle.onDisconnected(id)
+                      },
                   )
+              }
+
+              init {
+                  // Keep the connection alive in the background for as long as we're in a jam.
+                  g.scope.launch(Dispatchers.Main) {
+                      var wasActive = false
+                      state.collect { st ->
+                          val active = st.role != JamRole.NONE
+                          if (active && !wasActive) JamService.start(g.app)
+                          if (!active && wasActive) JamService.stop(g.app)
+                          wasActive = active
+                      }
+                  }
+              }
+
+              private fun reconnect(id: String, attempt: Int) {
+                  if (!isGuest || hostEndpoint != id) return
+                  _state.update { it.copy(error = "Connection dropped. Reconnecting… (try $attempt of 6)") }
+                  wifi.connect(id) { ok, _ ->
+                      if (!isGuest || hostEndpoint != id) return@connect
+                      if (ok) {
+                          send(listOf(id), buildJsonObject {
+                              put("t", "hello")
+                              put("name", myName())
+                          })
+                          _state.update { it.copy(error = null) }
+                      } else if (attempt < 6) {
+                          g.scope.launch(Dispatchers.Main) {
+                              delay(3000)
+                              reconnect(id, attempt + 1)
+                          }
+                      } else {
+                          endLocal()
+                          g.toast("Lost connection to the jam")
+                      }
+                  }
               }
 
               private fun myName(): String = g.settings.current.username.ifBlank { Build.MODEL ?: "Phone" }
@@ -2927,7 +2972,131 @@ jobs:
               }
           }
           FEYNOS_EOF_041
-          cat > 'app/src/main/java/com/feynos/music/jam/WifiJam.kt' <<'FEYNOS_EOF_042'
+          cat > 'app/src/main/java/com/feynos/music/jam/JamService.kt' <<'FEYNOS_EOF_042'
+          package com.feynos.music.jam
+
+          import android.app.NotificationChannel
+          import android.app.NotificationManager
+          import android.app.PendingIntent
+          import android.app.Service
+          import android.content.Context
+          import android.content.Intent
+          import android.content.pm.ServiceInfo
+          import android.net.wifi.WifiManager
+          import android.os.Build
+          import android.os.IBinder
+          import android.os.PowerManager
+          import androidx.core.app.NotificationCompat
+          import androidx.core.app.ServiceCompat
+          import androidx.core.content.ContextCompat
+          import com.feynos.music.App
+          import com.feynos.music.MainActivity
+          import com.feynos.music.R
+          import kotlinx.coroutines.Dispatchers
+          import kotlinx.coroutines.Job
+          import kotlinx.coroutines.flow.combine
+          import kotlinx.coroutines.launch
+
+          /**
+           * Keeps the jam connection alive while the phone is locked or the app is in the background.
+           * Without this, Android cuts network access for background apps that aren't playing audio,
+           * which dropped guests out of the jam (the music plays on the host, not on the guest phone).
+           */
+          class JamService : Service() {
+              companion object {
+                  private const val CHANNEL = "jam"
+                  private const val NOTIFICATION_ID = 4242
+                  private const val ACTION_LEAVE = "com.feynos.music.jam.LEAVE"
+
+                  fun start(context: Context) {
+                      runCatching { ContextCompat.startForegroundService(context, Intent(context, JamService::class.java)) }
+                  }
+
+                  fun stop(context: Context) {
+                      runCatching { context.stopService(Intent(context, JamService::class.java)) }
+                  }
+              }
+
+              private var wifiLock: WifiManager.WifiLock? = null
+              private var wakeLock: PowerManager.WakeLock? = null
+              private var job: Job? = null
+
+              override fun onBind(intent: Intent?): IBinder? = null
+
+              override fun onCreate() {
+                  super.onCreate()
+                  val nm = getSystemService(NotificationManager::class.java)
+                  nm?.createNotificationChannel(NotificationChannel(CHANNEL, "Jam", NotificationManager.IMPORTANCE_LOW))
+                  val type = if (Build.VERSION.SDK_INT >= 29) ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE else 0
+                  ServiceCompat.startForeground(this, NOTIFICATION_ID, build(), type)
+
+                  // Keep Wi-Fi awake and the CPU able to receive messages from the host.
+                  runCatching {
+                      @Suppress("DEPRECATION")
+                      val mode = if (Build.VERSION.SDK_INT >= 29) WifiManager.WIFI_MODE_FULL_LOW_LATENCY else WifiManager.WIFI_MODE_FULL_HIGH_PERF
+                      wifiLock = getSystemService(WifiManager::class.java)?.createWifiLock(mode, "FeynosMusic:jam")?.apply {
+                          setReferenceCounted(false)
+                          acquire()
+                      }
+                  }
+                  runCatching {
+                      wakeLock = getSystemService(PowerManager::class.java)?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "FeynosMusic:jam")?.apply {
+                          setReferenceCounted(false)
+                          acquire(6 * 60 * 60 * 1000L) // safety cap: 6 hours
+                      }
+                  }
+
+                  val g = App.graph
+                  job = g.scope.launch(Dispatchers.Main) {
+                      combine(g.jam.state, g.player.state) { _, _ -> }.collect {
+                          runCatching { nm?.notify(NOTIFICATION_ID, build()) }
+                      }
+                  }
+              }
+
+              override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+                  if (intent?.action == ACTION_LEAVE) App.graph.jam.leave()
+                  return START_NOT_STICKY
+              }
+
+              private fun build(): android.app.Notification {
+                  val g = App.graph
+                  val jam = g.jam.state.value
+                  val song = g.player.state.value.song
+                  val title = when (jam.role) {
+                      JamRole.HOST -> "Your jam is live · ${jam.members.size} ${if (jam.members.size == 1) "person" else "people"}"
+                      JamRole.GUEST -> "In ${jam.hostName.ifBlank { "a" }}'s jam"
+                      JamRole.NONE -> "Jam"
+                  }
+                  val open = PendingIntent.getActivity(
+                      this, 0, Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+                      PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+                  )
+                  val leave = PendingIntent.getService(
+                      this, 1, Intent(this, JamService::class.java).setAction(ACTION_LEAVE),
+                      PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+                  )
+                  return NotificationCompat.Builder(this, CHANNEL)
+                      .setSmallIcon(R.drawable.ic_notification)
+                      .setContentTitle(title)
+                      .setContentText(song?.let { "${it.title} · ${it.artist.orEmpty()}" } ?: "Connected")
+                      .setContentIntent(open)
+                      .setOngoing(true)
+                      .setOnlyAlertOnce(true)
+                      .setSilent(true)
+                      .addAction(0, if (jam.role == JamRole.HOST) "End jam" else "Leave jam", leave)
+                      .build()
+              }
+
+              override fun onDestroy() {
+                  job?.cancel()
+                  runCatching { if (wifiLock?.isHeld == true) wifiLock?.release() }
+                  runCatching { if (wakeLock?.isHeld == true) wakeLock?.release() }
+                  super.onDestroy()
+              }
+          }
+          FEYNOS_EOF_042
+          cat > 'app/src/main/java/com/feynos/music/jam/WifiJam.kt' <<'FEYNOS_EOF_043'
           package com.feynos.music.jam
 
           import android.content.Context
@@ -3124,8 +3293,8 @@ jobs:
                   services.clear()
               }
           }
-          FEYNOS_EOF_042
-          cat > 'app/src/main/java/com/feynos/music/player/MediaItems.kt' <<'FEYNOS_EOF_043'
+          FEYNOS_EOF_043
+          cat > 'app/src/main/java/com/feynos/music/player/MediaItems.kt' <<'FEYNOS_EOF_044'
           package com.feynos.music.player
 
           import android.content.Context
@@ -3204,8 +3373,8 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_043
-          cat > 'app/src/main/java/com/feynos/music/player/PlaybackService.kt' <<'FEYNOS_EOF_044'
+          FEYNOS_EOF_044
+          cat > 'app/src/main/java/com/feynos/music/player/PlaybackService.kt' <<'FEYNOS_EOF_045'
           package com.feynos.music.player
 
           import android.app.PendingIntent
@@ -3441,8 +3610,8 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_044
-          cat > 'app/src/main/java/com/feynos/music/player/PlayerController.kt' <<'FEYNOS_EOF_045'
+          FEYNOS_EOF_045
+          cat > 'app/src/main/java/com/feynos/music/player/PlayerController.kt' <<'FEYNOS_EOF_046'
           package com.feynos.music.player
 
           import android.content.ComponentName
@@ -3815,8 +3984,8 @@ jobs:
                   c.clearMediaItems()
               }
           }
-          FEYNOS_EOF_045
-          cat > 'app/src/main/java/com/feynos/music/update/Updater.kt' <<'FEYNOS_EOF_046'
+          FEYNOS_EOF_046
+          cat > 'app/src/main/java/com/feynos/music/update/Updater.kt' <<'FEYNOS_EOF_047'
           package com.feynos.music.update
 
           import android.content.Context
@@ -3902,8 +4071,8 @@ jobs:
                   return true
               }
           }
-          FEYNOS_EOF_046
-          cat > 'app/src/main/java/com/feynos/music/widget/Widgets.kt' <<'FEYNOS_EOF_047'
+          FEYNOS_EOF_047
+          cat > 'app/src/main/java/com/feynos/music/widget/Widgets.kt' <<'FEYNOS_EOF_048'
           package com.feynos.music.widget
 
           import android.app.PendingIntent
@@ -4026,8 +4195,8 @@ jobs:
                   if (cover.isNotEmpty()) mgr.updateAppWidget(cover, build(context, R.layout.widget_cover, CoverWidget::class.java, 200))
               }
           }
-          FEYNOS_EOF_047
-          cat > 'app/src/main/java/com/feynos/music/work/Workers.kt' <<'FEYNOS_EOF_048'
+          FEYNOS_EOF_048
+          cat > 'app/src/main/java/com/feynos/music/work/Workers.kt' <<'FEYNOS_EOF_049'
           package com.feynos.music.work
 
           import android.content.Context
@@ -4172,12 +4341,12 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_048
+          FEYNOS_EOF_049
 
       - name: Write user interface
         run: |
           mkdir -p "app/src/main/java/com/feynos/music/ui"
-          cat > 'app/src/main/java/com/feynos/music/ui/Components.kt' <<'FEYNOS_EOF_049'
+          cat > 'app/src/main/java/com/feynos/music/ui/Components.kt' <<'FEYNOS_EOF_050'
           @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
           package com.feynos.music.ui
@@ -4645,8 +4814,8 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_049
-          cat > 'app/src/main/java/com/feynos/music/ui/CoverArtScreens.kt' <<'FEYNOS_EOF_050'
+          FEYNOS_EOF_050
+          cat > 'app/src/main/java/com/feynos/music/ui/CoverArtScreens.kt' <<'FEYNOS_EOF_051'
           @file:OptIn(ExperimentalMaterial3Api::class)
 
           package com.feynos.music.ui
@@ -4841,8 +5010,8 @@ jobs:
                   modifier = Modifier.clickable(onClick = onClick),
               )
           }
-          FEYNOS_EOF_050
-          cat > 'app/src/main/java/com/feynos/music/ui/DetailScreens.kt' <<'FEYNOS_EOF_051'
+          FEYNOS_EOF_051
+          cat > 'app/src/main/java/com/feynos/music/ui/DetailScreens.kt' <<'FEYNOS_EOF_052'
           @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
           package com.feynos.music.ui
@@ -5300,8 +5469,8 @@ jobs:
                   DownloadsContent()
               }
           }
-          FEYNOS_EOF_051
-          cat > 'app/src/main/java/com/feynos/music/ui/ForYouScreens.kt' <<'FEYNOS_EOF_052'
+          FEYNOS_EOF_052
+          cat > 'app/src/main/java/com/feynos/music/ui/ForYouScreens.kt' <<'FEYNOS_EOF_053'
           @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
           package com.feynos.music.ui
@@ -5705,8 +5874,8 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_052
-          cat > 'app/src/main/java/com/feynos/music/ui/JamScreen.kt' <<'FEYNOS_EOF_053'
+          FEYNOS_EOF_053
+          cat > 'app/src/main/java/com/feynos/music/ui/JamScreen.kt' <<'FEYNOS_EOF_054'
           @file:OptIn(ExperimentalMaterial3Api::class)
 
           package com.feynos.music.ui
@@ -5929,8 +6098,8 @@ jobs:
                   )
               }
           }
-          FEYNOS_EOF_053
-          cat > 'app/src/main/java/com/feynos/music/ui/MainScreens.kt' <<'FEYNOS_EOF_054'
+          FEYNOS_EOF_054
+          cat > 'app/src/main/java/com/feynos/music/ui/MainScreens.kt' <<'FEYNOS_EOF_055'
           @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
           package com.feynos.music.ui
@@ -6523,8 +6692,8 @@ jobs:
                   dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
               )
           }
-          FEYNOS_EOF_054
-          cat > 'app/src/main/java/com/feynos/music/ui/NowPlaying.kt' <<'FEYNOS_EOF_055'
+          FEYNOS_EOF_055
+          cat > 'app/src/main/java/com/feynos/music/ui/NowPlaying.kt' <<'FEYNOS_EOF_056'
           @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
           package com.feynos.music.ui
@@ -6931,8 +7100,8 @@ jobs:
                   dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
               )
           }
-          FEYNOS_EOF_055
-          cat > 'app/src/main/java/com/feynos/music/ui/SettingsScreen.kt' <<'FEYNOS_EOF_056'
+          FEYNOS_EOF_056
+          cat > 'app/src/main/java/com/feynos/music/ui/SettingsScreen.kt' <<'FEYNOS_EOF_057'
           @file:OptIn(ExperimentalMaterial3Api::class)
 
           package com.feynos.music.ui
@@ -7193,8 +7362,8 @@ jobs:
                   confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
               )
           }
-          FEYNOS_EOF_056
-          cat > 'app/src/main/java/com/feynos/music/ui/Shell.kt' <<'FEYNOS_EOF_057'
+          FEYNOS_EOF_057
+          cat > 'app/src/main/java/com/feynos/music/ui/Shell.kt' <<'FEYNOS_EOF_058'
           @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
           package com.feynos.music.ui
@@ -7508,8 +7677,8 @@ jobs:
                   dismissButton = { TextButton(onClick = onDismiss, enabled = progress == null) { Text("Later") } },
               )
           }
-          FEYNOS_EOF_057
-          cat > 'app/src/main/java/com/feynos/music/ui/Theme.kt' <<'FEYNOS_EOF_058'
+          FEYNOS_EOF_058
+          cat > 'app/src/main/java/com/feynos/music/ui/Theme.kt' <<'FEYNOS_EOF_059'
           package com.feynos.music.ui
 
           import android.os.Build
@@ -7554,7 +7723,7 @@ jobs:
                   CompositionLocalProvider(LocalContentColor provides scheme.onBackground, content = content)
               }
           }
-          FEYNOS_EOF_058
+          FEYNOS_EOF_059
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
