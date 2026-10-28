@@ -29,7 +29,7 @@ jobs:
 
       - name: Write Gradle setup and resources
         run: |
-          mkdir -p "app" "app/src/main" "app/src/main/res/drawable" "app/src/main/res/mipmap-anydpi-v26" "app/src/main/res/values" "app/src/main/res/xml"
+          mkdir -p "app" "app/src/main" "app/src/main/res/drawable" "app/src/main/res/layout" "app/src/main/res/mipmap-anydpi-v26" "app/src/main/res/values" "app/src/main/res/xml"
           cat > 'build.gradle.kts' <<'FEYNOS_EOF_001'
           plugins {
               id("com.android.application") version "8.7.3" apply false
@@ -202,6 +202,34 @@ jobs:
                       </intent-filter>
                   </service>
 
+                  <receiver
+                      android:name=".widget.PlayerWidget"
+                      android:exported="false"
+                      android:label="Feynos Music">
+                      <intent-filter>
+                          <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                      </intent-filter>
+                      <meta-data
+                          android:name="android.appwidget.provider"
+                          android:resource="@xml/widget_player_info" />
+                  </receiver>
+
+                  <receiver
+                      android:name=".widget.CoverWidget"
+                      android:exported="false"
+                      android:label="Feynos Music (cover screen)">
+                      <intent-filter>
+                          <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                      </intent-filter>
+                      <meta-data
+                          android:name="android.appwidget.provider"
+                          android:resource="@xml/widget_cover_info" />
+                      <!-- Shows this widget in the Galaxy Z Flip "Flex Window" (cover screen) widget list -->
+                      <meta-data
+                          android:name="com.samsung.android.appwidget.provider"
+                          android:resource="@xml/samsung_cover_widget" />
+                  </receiver>
+
                   <provider
                       android:name="androidx.core.content.FileProvider"
                       android:authorities="${applicationId}.fileprovider"
@@ -250,33 +278,282 @@ jobs:
               </group>
           </vector>
           FEYNOS_EOF_007
-          cat > 'app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml' <<'FEYNOS_EOF_008'
-          <?xml version="1.0" encoding="utf-8"?>
-          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-              <background android:drawable="@color/ic_launcher_background" />
-              <foreground android:drawable="@drawable/ic_launcher_foreground" />
-              <monochrome android:drawable="@drawable/ic_launcher_foreground" />
-          </adaptive-icon>
+          cat > 'app/src/main/res/drawable/ic_w_next.xml' <<'FEYNOS_EOF_008'
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+              <path android:fillColor="#FFFFFFFF" android:pathData="M6,18l8.5,-6L6,6v12zM16,6v12h2V6h-2z" />
+          </vector>
           FEYNOS_EOF_008
-          cat > 'app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml' <<'FEYNOS_EOF_009'
+          cat > 'app/src/main/res/drawable/ic_w_note.xml' <<'FEYNOS_EOF_009'
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+              <path android:fillColor="#80FFFFFF" android:pathData="M12,3v10.55c-0.59,-0.34 -1.27,-0.55 -2,-0.55 -2.21,0 -4,1.79 -4,4s1.79,4 4,4 4,-1.79 4,-4V7h4V3h-6z" />
+          </vector>
+          FEYNOS_EOF_009
+          cat > 'app/src/main/res/drawable/ic_w_pause.xml' <<'FEYNOS_EOF_010'
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+              <path android:fillColor="#FF000000" android:pathData="M6,19h4V5H6v14zM14,5v14h4V5h-4z" />
+          </vector>
+          FEYNOS_EOF_010
+          cat > 'app/src/main/res/drawable/ic_w_play.xml' <<'FEYNOS_EOF_011'
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+              <path android:fillColor="#FF000000" android:pathData="M8,5v14l11,-7z" />
+          </vector>
+          FEYNOS_EOF_011
+          cat > 'app/src/main/res/drawable/ic_w_prev.xml' <<'FEYNOS_EOF_012'
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+              <path android:fillColor="#FFFFFFFF" android:pathData="M6,6h2v12H6zM9.5,12l8.5,6V6z" />
+          </vector>
+          FEYNOS_EOF_012
+          cat > 'app/src/main/res/drawable/widget_art_bg.xml' <<'FEYNOS_EOF_013'
+          <?xml version="1.0" encoding="utf-8"?>
+          <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+              <solid android:color="#FF2B2140" />
+              <corners android:radius="14dp" />
+          </shape>
+          FEYNOS_EOF_013
+          cat > 'app/src/main/res/drawable/widget_bg.xml' <<'FEYNOS_EOF_014'
+          <?xml version="1.0" encoding="utf-8"?>
+          <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+              <solid android:color="#F0181820" />
+              <corners android:radius="24dp" />
+          </shape>
+          FEYNOS_EOF_014
+          cat > 'app/src/main/res/drawable/widget_cover_bg.xml' <<'FEYNOS_EOF_015'
+          <?xml version="1.0" encoding="utf-8"?>
+          <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+              <gradient android:angle="315" android:startColor="#FF6C3CE0" android:endColor="#FF1A1028" />
+          </shape>
+          FEYNOS_EOF_015
+          cat > 'app/src/main/res/drawable/widget_cover_scrim.xml' <<'FEYNOS_EOF_016'
+          <?xml version="1.0" encoding="utf-8"?>
+          <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+              <gradient android:angle="270" android:startColor="#00000000" android:centerColor="#66000000" android:endColor="#E6000000" />
+          </shape>
+          FEYNOS_EOF_016
+          cat > 'app/src/main/res/drawable/widget_play_bg.xml' <<'FEYNOS_EOF_017'
+          <?xml version="1.0" encoding="utf-8"?>
+          <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="oval">
+              <solid android:color="#FFFFFFFF" />
+          </shape>
+          FEYNOS_EOF_017
+          cat > 'app/src/main/res/layout/widget_cover.xml' <<'FEYNOS_EOF_018'
+          <?xml version="1.0" encoding="utf-8"?>
+          <!-- Square layout for the Galaxy Z Flip cover screen (Flex Window): full-bleed album art,
+               big text and large buttons kept in the lower half, away from the cameras. -->
+          <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              android:id="@android:id/background"
+              android:layout_width="match_parent"
+              android:layout_height="match_parent"
+              android:background="@drawable/widget_cover_bg">
+
+              <ImageView
+                  android:id="@+id/w_art"
+                  android:layout_width="match_parent"
+                  android:layout_height="match_parent"
+                  android:contentDescription="Album art"
+                  android:scaleType="centerCrop" />
+
+              <View
+                  android:layout_width="match_parent"
+                  android:layout_height="match_parent"
+                  android:background="@drawable/widget_cover_scrim" />
+
+              <LinearLayout
+                  android:layout_width="match_parent"
+                  android:layout_height="wrap_content"
+                  android:layout_gravity="bottom"
+                  android:gravity="center_horizontal"
+                  android:orientation="vertical"
+                  android:paddingStart="20dp"
+                  android:paddingEnd="20dp"
+                  android:paddingBottom="20dp">
+
+                  <TextView
+                      android:id="@+id/w_title"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:ellipsize="end"
+                      android:gravity="center"
+                      android:maxLines="1"
+                      android:shadowColor="#99000000"
+                      android:shadowRadius="6"
+                      android:text="Feynos Music"
+                      android:textColor="#FFFFFFFF"
+                      android:textSize="22sp"
+                      android:textStyle="bold" />
+
+                  <TextView
+                      android:id="@+id/w_artist"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:ellipsize="end"
+                      android:gravity="center"
+                      android:maxLines="1"
+                      android:shadowColor="#99000000"
+                      android:shadowRadius="6"
+                      android:text="Tap play to start listening"
+                      android:textColor="#CCFFFFFF"
+                      android:textSize="16sp" />
+
+                  <LinearLayout
+                      android:layout_width="wrap_content"
+                      android:layout_height="wrap_content"
+                      android:layout_marginTop="14dp"
+                      android:gravity="center_vertical"
+                      android:orientation="horizontal">
+
+                      <ImageButton
+                          android:id="@+id/w_prev"
+                          android:layout_width="60dp"
+                          android:layout_height="60dp"
+                          android:background="@android:color/transparent"
+                          android:contentDescription="Previous"
+                          android:scaleType="fitCenter"
+                          android:padding="12dp"
+                          android:src="@drawable/ic_w_prev" />
+
+                      <ImageButton
+                          android:id="@+id/w_play"
+                          android:layout_width="72dp"
+                          android:layout_height="72dp"
+                          android:layout_marginStart="20dp"
+                          android:layout_marginEnd="20dp"
+                          android:background="@drawable/widget_play_bg"
+                          android:contentDescription="Play or pause"
+                          android:scaleType="fitCenter"
+                          android:padding="16dp"
+                          android:src="@drawable/ic_w_play" />
+
+                      <ImageButton
+                          android:id="@+id/w_next"
+                          android:layout_width="60dp"
+                          android:layout_height="60dp"
+                          android:background="@android:color/transparent"
+                          android:contentDescription="Next"
+                          android:scaleType="fitCenter"
+                          android:padding="12dp"
+                          android:src="@drawable/ic_w_next" />
+                  </LinearLayout>
+              </LinearLayout>
+          </FrameLayout>
+          FEYNOS_EOF_018
+          cat > 'app/src/main/res/layout/widget_player.xml' <<'FEYNOS_EOF_019'
+          <?xml version="1.0" encoding="utf-8"?>
+          <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              android:id="@android:id/background"
+              android:layout_width="match_parent"
+              android:layout_height="match_parent"
+              android:background="@drawable/widget_bg"
+              android:gravity="center_vertical"
+              android:orientation="horizontal"
+              android:padding="12dp">
+
+              <ImageView
+                  android:id="@+id/w_art"
+                  android:layout_width="88dp"
+                  android:layout_height="88dp"
+                  android:background="@drawable/widget_art_bg"
+                  android:contentDescription="Album art"
+                  android:scaleType="centerCrop"
+                  android:src="@drawable/ic_w_note" />
+
+              <LinearLayout
+                  android:layout_width="0dp"
+                  android:layout_height="wrap_content"
+                  android:layout_marginStart="14dp"
+                  android:layout_weight="1"
+                  android:orientation="vertical">
+
+                  <TextView
+                      android:id="@+id/w_title"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:ellipsize="end"
+                      android:maxLines="1"
+                      android:text="Feynos Music"
+                      android:textColor="#FFFFFFFF"
+                      android:textSize="16sp"
+                      android:textStyle="bold" />
+
+                  <TextView
+                      android:id="@+id/w_artist"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:ellipsize="end"
+                      android:maxLines="1"
+                      android:text="Tap to start listening"
+                      android:textColor="#B3FFFFFF"
+                      android:textSize="13sp" />
+
+                  <LinearLayout
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:layout_marginTop="8dp"
+                      android:gravity="center_vertical"
+                      android:orientation="horizontal">
+
+                      <ImageButton
+                          android:id="@+id/w_prev"
+                          android:layout_width="44dp"
+                          android:layout_height="44dp"
+                          android:background="@android:color/transparent"
+                          android:contentDescription="Previous"
+                          android:src="@drawable/ic_w_prev" />
+
+                      <ImageButton
+                          android:id="@+id/w_play"
+                          android:layout_width="48dp"
+                          android:layout_height="48dp"
+                          android:layout_marginStart="12dp"
+                          android:layout_marginEnd="12dp"
+                          android:background="@drawable/widget_play_bg"
+                          android:contentDescription="Play or pause"
+                          android:src="@drawable/ic_w_play" />
+
+                      <ImageButton
+                          android:id="@+id/w_next"
+                          android:layout_width="44dp"
+                          android:layout_height="44dp"
+                          android:background="@android:color/transparent"
+                          android:contentDescription="Next"
+                          android:src="@drawable/ic_w_next" />
+                  </LinearLayout>
+              </LinearLayout>
+          </LinearLayout>
+          FEYNOS_EOF_019
+          cat > 'app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml' <<'FEYNOS_EOF_020'
           <?xml version="1.0" encoding="utf-8"?>
           <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
               <background android:drawable="@color/ic_launcher_background" />
               <foreground android:drawable="@drawable/ic_launcher_foreground" />
               <monochrome android:drawable="@drawable/ic_launcher_foreground" />
           </adaptive-icon>
-          FEYNOS_EOF_009
-          cat > 'app/src/main/res/values/colors.xml' <<'FEYNOS_EOF_010'
+          FEYNOS_EOF_020
+          cat > 'app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml' <<'FEYNOS_EOF_021'
+          <?xml version="1.0" encoding="utf-8"?>
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+              <background android:drawable="@color/ic_launcher_background" />
+              <foreground android:drawable="@drawable/ic_launcher_foreground" />
+              <monochrome android:drawable="@drawable/ic_launcher_foreground" />
+          </adaptive-icon>
+          FEYNOS_EOF_021
+          cat > 'app/src/main/res/values/colors.xml' <<'FEYNOS_EOF_022'
           <resources>
               <color name="ic_launcher_background">#6C3CE0</color>
           </resources>
-          FEYNOS_EOF_010
-          cat > 'app/src/main/res/values/strings.xml' <<'FEYNOS_EOF_011'
+          FEYNOS_EOF_022
+          cat > 'app/src/main/res/values/strings.xml' <<'FEYNOS_EOF_023'
           <resources>
               <string name="app_name">Feynos Music</string>
+              <string name="widget_description">See what\'s playing and control the music</string>
+              <string name="widget_cover_description">Big album art and controls, made for the Galaxy Z Flip cover screen</string>
           </resources>
-          FEYNOS_EOF_011
-          cat > 'app/src/main/res/values/themes.xml' <<'FEYNOS_EOF_012'
+          FEYNOS_EOF_023
+          cat > 'app/src/main/res/values/themes.xml' <<'FEYNOS_EOF_024'
           <resources>
               <style name="Theme.Feynos" parent="android:Theme.Material.NoActionBar">
                   <item name="android:windowBackground">#FF0E0E12</item>
@@ -284,18 +561,52 @@ jobs:
                   <item name="android:navigationBarColor">@android:color/transparent</item>
               </style>
           </resources>
-          FEYNOS_EOF_012
-          cat > 'app/src/main/res/xml/file_paths.xml' <<'FEYNOS_EOF_013'
+          FEYNOS_EOF_024
+          cat > 'app/src/main/res/xml/file_paths.xml' <<'FEYNOS_EOF_025'
           <?xml version="1.0" encoding="utf-8"?>
           <paths>
               <cache-path name="updates" path="updates/" />
           </paths>
-          FEYNOS_EOF_013
+          FEYNOS_EOF_025
+          cat > 'app/src/main/res/xml/samsung_cover_widget.xml' <<'FEYNOS_EOF_026'
+          <?xml version="1.0" encoding="utf-8"?>
+          <samsung-appwidget-provider display="sub_screen" />
+          FEYNOS_EOF_026
+          cat > 'app/src/main/res/xml/widget_cover_info.xml' <<'FEYNOS_EOF_027'
+          <?xml version="1.0" encoding="utf-8"?>
+          <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+              android:description="@string/widget_cover_description"
+              android:initialLayout="@layout/widget_cover"
+              android:previewLayout="@layout/widget_cover"
+              android:minWidth="352dp"
+              android:minHeight="339dp"
+              android:resizeMode="horizontal|vertical"
+              android:targetCellWidth="2"
+              android:targetCellHeight="2"
+              android:updatePeriodMillis="0"
+              android:widgetCategory="keyguard|home_screen" />
+          FEYNOS_EOF_027
+          cat > 'app/src/main/res/xml/widget_player_info.xml' <<'FEYNOS_EOF_028'
+          <?xml version="1.0" encoding="utf-8"?>
+          <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+              android:description="@string/widget_description"
+              android:initialLayout="@layout/widget_player"
+              android:minWidth="250dp"
+              android:minHeight="110dp"
+              android:minResizeWidth="220dp"
+              android:minResizeHeight="100dp"
+              android:previewLayout="@layout/widget_player"
+              android:resizeMode="horizontal|vertical"
+              android:targetCellWidth="4"
+              android:targetCellHeight="2"
+              android:updatePeriodMillis="0"
+              android:widgetCategory="home_screen" />
+          FEYNOS_EOF_028
 
       - name: Write data layer
         run: |
           mkdir -p "app/src/main/java/com/feynos/music/data" "app/src/main/java/com/feynos/music/util"
-          cat > 'app/src/main/java/com/feynos/music/data/CoverArtFinder.kt' <<'FEYNOS_EOF_014'
+          cat > 'app/src/main/java/com/feynos/music/data/CoverArtFinder.kt' <<'FEYNOS_EOF_029'
           package com.feynos.music.data
 
           import android.content.ContentValues
@@ -598,8 +909,8 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_014
-          cat > 'app/src/main/java/com/feynos/music/data/ListenBrainzClient.kt' <<'FEYNOS_EOF_015'
+          FEYNOS_EOF_029
+          cat > 'app/src/main/java/com/feynos/music/data/ListenBrainzClient.kt' <<'FEYNOS_EOF_030'
           package com.feynos.music.data
 
           import android.net.Uri
@@ -749,8 +1060,8 @@ jobs:
                   return out
               }
           }
-          FEYNOS_EOF_015
-          cat > 'app/src/main/java/com/feynos/music/data/LocalDb.kt' <<'FEYNOS_EOF_016'
+          FEYNOS_EOF_030
+          cat > 'app/src/main/java/com/feynos/music/data/LocalDb.kt' <<'FEYNOS_EOF_031'
           package com.feynos.music.data
 
           import android.content.ContentValues
@@ -993,8 +1304,8 @@ jobs:
               fun coverOverrides(): Map<String, String> =
                   query("SELECT album_id, url FROM cover_art WHERE url IS NOT NULL") { it.getString(0) to it.getString(1) }.toMap()
           }
-          FEYNOS_EOF_016
-          cat > 'app/src/main/java/com/feynos/music/data/MixGenerator.kt' <<'FEYNOS_EOF_017'
+          FEYNOS_EOF_031
+          cat > 'app/src/main/java/com/feynos/music/data/MixGenerator.kt' <<'FEYNOS_EOF_032'
           package com.feynos.music.data
 
           import com.feynos.music.Graph
@@ -1137,8 +1448,8 @@ jobs:
                   result.size
               }
           }
-          FEYNOS_EOF_017
-          cat > 'app/src/main/java/com/feynos/music/data/Models.kt' <<'FEYNOS_EOF_018'
+          FEYNOS_EOF_032
+          cat > 'app/src/main/java/com/feynos/music/data/Models.kt' <<'FEYNOS_EOF_033'
           package com.feynos.music.data
 
           import kotlinx.serialization.Serializable
@@ -1250,8 +1561,8 @@ jobs:
           )
 
           data class LbPlaylistRef(val mbid: String, val title: String, val date: String?)
-          FEYNOS_EOF_018
-          cat > 'app/src/main/java/com/feynos/music/data/SettingsStore.kt' <<'FEYNOS_EOF_019'
+          FEYNOS_EOF_033
+          cat > 'app/src/main/java/com/feynos/music/data/SettingsStore.kt' <<'FEYNOS_EOF_034'
           package com.feynos.music.data
 
           import android.content.Context
@@ -1377,8 +1688,8 @@ jobs:
                   p[kAutoCovers] = s.autoCovers
               }
           }
-          FEYNOS_EOF_019
-          cat > 'app/src/main/java/com/feynos/music/data/SubsonicClient.kt' <<'FEYNOS_EOF_020'
+          FEYNOS_EOF_034
+          cat > 'app/src/main/java/com/feynos/music/data/SubsonicClient.kt' <<'FEYNOS_EOF_035'
           package com.feynos.music.data
 
           import com.feynos.music.util.AppJson
@@ -1579,8 +1890,8 @@ jobs:
 
               fun downloadUrl(id: String): String = buildUrl("download", listOf("id" to id))
           }
-          FEYNOS_EOF_020
-          cat > 'app/src/main/java/com/feynos/music/data/TrackMatcher.kt' <<'FEYNOS_EOF_021'
+          FEYNOS_EOF_035
+          cat > 'app/src/main/java/com/feynos/music/data/TrackMatcher.kt' <<'FEYNOS_EOF_036'
           package com.feynos.music.data
 
           import kotlinx.coroutines.CancellationException
@@ -1675,8 +1986,8 @@ jobs:
                   return sc
               }
           }
-          FEYNOS_EOF_021
-          cat > 'app/src/main/java/com/feynos/music/util/Util.kt' <<'FEYNOS_EOF_022'
+          FEYNOS_EOF_036
+          cat > 'app/src/main/java/com/feynos/music/util/Util.kt' <<'FEYNOS_EOF_037'
           package com.feynos.music.util
 
           import kotlinx.serialization.json.Json
@@ -1759,12 +2070,12 @@ jobs:
           /** Navidrome album cover ids look like "al-<albumId>_<hex>". */
           fun albumIdFromCover(coverId: String?): String? =
               coverId?.takeIf { it.startsWith("al-") }?.removePrefix("al-")?.substringBefore('_')?.takeIf { it.isNotBlank() }
-          FEYNOS_EOF_022
+          FEYNOS_EOF_037
 
       - name: Write player, workers and app core
         run: |
-          mkdir -p "app/src/main/java/com/feynos/music" "app/src/main/java/com/feynos/music/jam" "app/src/main/java/com/feynos/music/player" "app/src/main/java/com/feynos/music/update" "app/src/main/java/com/feynos/music/work"
-          cat > 'app/src/main/java/com/feynos/music/App.kt' <<'FEYNOS_EOF_023'
+          mkdir -p "app/src/main/java/com/feynos/music" "app/src/main/java/com/feynos/music/jam" "app/src/main/java/com/feynos/music/player" "app/src/main/java/com/feynos/music/update" "app/src/main/java/com/feynos/music/widget" "app/src/main/java/com/feynos/music/work"
+          cat > 'app/src/main/java/com/feynos/music/App.kt' <<'FEYNOS_EOF_038'
           package com.feynos.music
 
           import android.app.Application
@@ -1786,8 +2097,8 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_023
-          cat > 'app/src/main/java/com/feynos/music/Graph.kt' <<'FEYNOS_EOF_024'
+          FEYNOS_EOF_038
+          cat > 'app/src/main/java/com/feynos/music/Graph.kt' <<'FEYNOS_EOF_039'
           package com.feynos.music
 
           import android.app.Application
@@ -2072,8 +2383,8 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_024
-          cat > 'app/src/main/java/com/feynos/music/MainActivity.kt' <<'FEYNOS_EOF_025'
+          FEYNOS_EOF_039
+          cat > 'app/src/main/java/com/feynos/music/MainActivity.kt' <<'FEYNOS_EOF_040'
           package com.feynos.music
 
           import android.Manifest
@@ -2107,8 +2418,8 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_025
-          cat > 'app/src/main/java/com/feynos/music/jam/JamManager.kt' <<'FEYNOS_EOF_026'
+          FEYNOS_EOF_040
+          cat > 'app/src/main/java/com/feynos/music/jam/JamManager.kt' <<'FEYNOS_EOF_041'
           package com.feynos.music.jam
 
           import android.os.Build
@@ -2613,8 +2924,8 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_026
-          cat > 'app/src/main/java/com/feynos/music/jam/WifiJam.kt' <<'FEYNOS_EOF_027'
+          FEYNOS_EOF_041
+          cat > 'app/src/main/java/com/feynos/music/jam/WifiJam.kt' <<'FEYNOS_EOF_042'
           package com.feynos.music.jam
 
           import android.content.Context
@@ -2811,8 +3122,8 @@ jobs:
                   services.clear()
               }
           }
-          FEYNOS_EOF_027
-          cat > 'app/src/main/java/com/feynos/music/player/MediaItems.kt' <<'FEYNOS_EOF_028'
+          FEYNOS_EOF_042
+          cat > 'app/src/main/java/com/feynos/music/player/MediaItems.kt' <<'FEYNOS_EOF_043'
           package com.feynos.music.player
 
           import android.content.Context
@@ -2891,8 +3202,8 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_028
-          cat > 'app/src/main/java/com/feynos/music/player/PlaybackService.kt' <<'FEYNOS_EOF_029'
+          FEYNOS_EOF_043
+          cat > 'app/src/main/java/com/feynos/music/player/PlaybackService.kt' <<'FEYNOS_EOF_044'
           package com.feynos.music.player
 
           import android.app.PendingIntent
@@ -2920,6 +3231,7 @@ jobs:
           import com.feynos.music.util.get
           import com.feynos.music.util.lng
           import com.feynos.music.util.str
+          import com.feynos.music.widget.Widgets
           import com.feynos.music.work.Workers
           import com.google.common.util.concurrent.Futures
           import com.google.common.util.concurrent.ListenableFuture
@@ -3002,6 +3314,12 @@ jobs:
                                   Player.EVENT_REPEAT_MODE_CHANGED,
                               ) || (events.contains(Player.EVENT_IS_PLAYING_CHANGED) && !p.isPlaying)
                           ) saveQueue(async = true)
+                          if (events.containsAny(
+                                  Player.EVENT_MEDIA_ITEM_TRANSITION,
+                                  Player.EVENT_IS_PLAYING_CHANGED,
+                                  Player.EVENT_MEDIA_METADATA_CHANGED,
+                              )
+                          ) Widgets.update(this@PlaybackService, p.currentMediaItem?.toSong(), p.isPlaying)
                       }
                   })
                   restoreQueue()
@@ -3016,6 +3334,7 @@ jobs:
 
               override fun onDestroy() {
                   saveQueue(async = false)
+                  Widgets.update(this, player.currentMediaItem?.toSong(), false)
                   scrobbler.release()
                   session?.run {
                       player.release()
@@ -3120,8 +3439,8 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_029
-          cat > 'app/src/main/java/com/feynos/music/player/PlayerController.kt' <<'FEYNOS_EOF_030'
+          FEYNOS_EOF_044
+          cat > 'app/src/main/java/com/feynos/music/player/PlayerController.kt' <<'FEYNOS_EOF_045'
           package com.feynos.music.player
 
           import android.content.ComponentName
@@ -3494,8 +3813,8 @@ jobs:
                   c.clearMediaItems()
               }
           }
-          FEYNOS_EOF_030
-          cat > 'app/src/main/java/com/feynos/music/update/Updater.kt' <<'FEYNOS_EOF_031'
+          FEYNOS_EOF_045
+          cat > 'app/src/main/java/com/feynos/music/update/Updater.kt' <<'FEYNOS_EOF_046'
           package com.feynos.music.update
 
           import android.content.Context
@@ -3581,8 +3900,132 @@ jobs:
                   return true
               }
           }
-          FEYNOS_EOF_031
-          cat > 'app/src/main/java/com/feynos/music/work/Workers.kt' <<'FEYNOS_EOF_032'
+          FEYNOS_EOF_046
+          cat > 'app/src/main/java/com/feynos/music/widget/Widgets.kt' <<'FEYNOS_EOF_047'
+          package com.feynos.music.widget
+
+          import android.app.PendingIntent
+          import android.appwidget.AppWidgetManager
+          import android.appwidget.AppWidgetProvider
+          import android.content.ComponentName
+          import android.content.Context
+          import android.content.Intent
+          import android.graphics.Bitmap
+          import android.graphics.drawable.BitmapDrawable
+          import android.widget.RemoteViews
+          import coil.imageLoader
+          import coil.request.ImageRequest
+          import com.feynos.music.App
+          import com.feynos.music.MainActivity
+          import com.feynos.music.R
+          import com.feynos.music.data.Song
+          import kotlinx.coroutines.Dispatchers
+          import kotlinx.coroutines.launch
+
+          /** Home-screen widget (wide). */
+          class PlayerWidget : AppWidgetProvider() {
+              override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) = Widgets.render(context)
+              override fun onReceive(context: Context, intent: Intent) {
+                  super.onReceive(context, intent)
+                  Widgets.handle(context, intent)
+              }
+          }
+
+          /** Square widget for the Galaxy Z Flip cover screen (Flex Window); also works on the home screen. */
+          class CoverWidget : AppWidgetProvider() {
+              override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) = Widgets.render(context)
+              override fun onReceive(context: Context, intent: Intent) {
+                  super.onReceive(context, intent)
+                  Widgets.handle(context, intent)
+              }
+          }
+
+          object Widgets {
+              private const val ACTION_TOGGLE = "com.feynos.music.widget.TOGGLE"
+              private const val ACTION_NEXT = "com.feynos.music.widget.NEXT"
+              private const val ACTION_PREV = "com.feynos.music.widget.PREV"
+
+              @Volatile private var title = "Feynos Music"
+              @Volatile private var artist = "Tap play to start listening"
+              @Volatile private var playing = false
+              @Volatile private var artUrl: String? = null
+              @Volatile private var art: Bitmap? = null
+
+              /** Called by the player whenever the song or play state changes. */
+              fun update(context: Context, song: Song?, isPlaying: Boolean) {
+                  val app = context.applicationContext
+                  val changed = song?.title != title || song?.artist != artist || isPlaying != playing
+                  title = song?.title ?: "Feynos Music"
+                  artist = song?.artist ?: "Tap play to start listening"
+                  playing = isPlaying
+                  val url = song?.let { App.graph.artUrl(it.coverArt, it.albumId, 400) }
+                  if (url != artUrl) {
+                      artUrl = url
+                      art = null
+                      render(app)
+                      if (url != null) loadArt(app, url)
+                  } else if (changed) {
+                      render(app)
+                  }
+              }
+
+              private fun loadArt(context: Context, url: String) {
+                  App.graph.scope.launch(Dispatchers.IO) {
+                      val req = ImageRequest.Builder(context).data(url).size(400).allowHardware(false)
+                          .memoryCacheKey("widget:$url").build()
+                      val bmp = (context.imageLoader.execute(req).drawable as? BitmapDrawable)?.bitmap ?: return@launch
+                      if (artUrl != url) return@launch
+                      // Keep the bitmap small: widgets have a size limit for images.
+                      art = if (bmp.width > 400 || bmp.height > 400) Bitmap.createScaledBitmap(bmp, 400, 400, true) else bmp
+                      render(context)
+                  }
+              }
+
+              fun handle(context: Context, intent: Intent) {
+                  val player = App.graph.player
+                  when (intent.action) {
+                      ACTION_TOGGLE -> player.toggle()
+                      ACTION_NEXT -> player.next()
+                      ACTION_PREV -> player.previous()
+                  }
+              }
+
+              private fun action(context: Context, cls: Class<*>, action: String, code: Int): PendingIntent =
+                  PendingIntent.getBroadcast(
+                      context, code, Intent(context, cls).setAction(action),
+                      PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+                  )
+
+              private fun build(context: Context, layout: Int, cls: Class<*>, base: Int): RemoteViews =
+                  RemoteViews(context.packageName, layout).apply {
+                      setTextViewText(R.id.w_title, title)
+                      setTextViewText(R.id.w_artist, artist)
+                      setImageViewResource(R.id.w_play, if (playing) R.drawable.ic_w_pause else R.drawable.ic_w_play)
+                      val bmp = art
+                      if (bmp != null) setImageViewBitmap(R.id.w_art, bmp)
+                      else if (layout == R.layout.widget_player) setImageViewResource(R.id.w_art, R.drawable.ic_w_note)
+                      else setImageViewResource(R.id.w_art, android.R.color.transparent)
+                      setOnClickPendingIntent(R.id.w_play, action(context, cls, ACTION_TOGGLE, base + 1))
+                      setOnClickPendingIntent(R.id.w_next, action(context, cls, ACTION_NEXT, base + 2))
+                      setOnClickPendingIntent(R.id.w_prev, action(context, cls, ACTION_PREV, base + 3))
+                      val open = PendingIntent.getActivity(
+                          context, base, Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                          PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+                      )
+                      setOnClickPendingIntent(R.id.w_art, open)
+                      setOnClickPendingIntent(R.id.w_title, open)
+                  }
+
+              fun render(context: Context) {
+                  val mgr = AppWidgetManager.getInstance(context)
+                  val home = mgr.getAppWidgetIds(ComponentName(context, PlayerWidget::class.java))
+                  if (home.isNotEmpty()) mgr.updateAppWidget(home, build(context, R.layout.widget_player, PlayerWidget::class.java, 100))
+                  val cover = mgr.getAppWidgetIds(ComponentName(context, CoverWidget::class.java))
+                  if (cover.isNotEmpty()) mgr.updateAppWidget(cover, build(context, R.layout.widget_cover, CoverWidget::class.java, 200))
+              }
+          }
+          FEYNOS_EOF_047
+          cat > 'app/src/main/java/com/feynos/music/work/Workers.kt' <<'FEYNOS_EOF_048'
           package com.feynos.music.work
 
           import android.content.Context
@@ -3727,12 +4170,12 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_032
+          FEYNOS_EOF_048
 
       - name: Write user interface
         run: |
           mkdir -p "app/src/main/java/com/feynos/music/ui"
-          cat > 'app/src/main/java/com/feynos/music/ui/Components.kt' <<'FEYNOS_EOF_033'
+          cat > 'app/src/main/java/com/feynos/music/ui/Components.kt' <<'FEYNOS_EOF_049'
           @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
           package com.feynos.music.ui
@@ -4200,8 +4643,8 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_033
-          cat > 'app/src/main/java/com/feynos/music/ui/CoverArtScreens.kt' <<'FEYNOS_EOF_034'
+          FEYNOS_EOF_049
+          cat > 'app/src/main/java/com/feynos/music/ui/CoverArtScreens.kt' <<'FEYNOS_EOF_050'
           @file:OptIn(ExperimentalMaterial3Api::class)
 
           package com.feynos.music.ui
@@ -4396,8 +4839,8 @@ jobs:
                   modifier = Modifier.clickable(onClick = onClick),
               )
           }
-          FEYNOS_EOF_034
-          cat > 'app/src/main/java/com/feynos/music/ui/DetailScreens.kt' <<'FEYNOS_EOF_035'
+          FEYNOS_EOF_050
+          cat > 'app/src/main/java/com/feynos/music/ui/DetailScreens.kt' <<'FEYNOS_EOF_051'
           @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
           package com.feynos.music.ui
@@ -4855,8 +5298,8 @@ jobs:
                   DownloadsContent()
               }
           }
-          FEYNOS_EOF_035
-          cat > 'app/src/main/java/com/feynos/music/ui/ForYouScreens.kt' <<'FEYNOS_EOF_036'
+          FEYNOS_EOF_051
+          cat > 'app/src/main/java/com/feynos/music/ui/ForYouScreens.kt' <<'FEYNOS_EOF_052'
           @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
           package com.feynos.music.ui
@@ -5260,8 +5703,8 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_036
-          cat > 'app/src/main/java/com/feynos/music/ui/JamScreen.kt' <<'FEYNOS_EOF_037'
+          FEYNOS_EOF_052
+          cat > 'app/src/main/java/com/feynos/music/ui/JamScreen.kt' <<'FEYNOS_EOF_053'
           @file:OptIn(ExperimentalMaterial3Api::class)
 
           package com.feynos.music.ui
@@ -5484,8 +5927,8 @@ jobs:
                   )
               }
           }
-          FEYNOS_EOF_037
-          cat > 'app/src/main/java/com/feynos/music/ui/MainScreens.kt' <<'FEYNOS_EOF_038'
+          FEYNOS_EOF_053
+          cat > 'app/src/main/java/com/feynos/music/ui/MainScreens.kt' <<'FEYNOS_EOF_054'
           @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
           package com.feynos.music.ui
@@ -6078,8 +6521,8 @@ jobs:
                   dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
               )
           }
-          FEYNOS_EOF_038
-          cat > 'app/src/main/java/com/feynos/music/ui/NowPlaying.kt' <<'FEYNOS_EOF_039'
+          FEYNOS_EOF_054
+          cat > 'app/src/main/java/com/feynos/music/ui/NowPlaying.kt' <<'FEYNOS_EOF_055'
           @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
           package com.feynos.music.ui
@@ -6486,8 +6929,8 @@ jobs:
                   dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
               )
           }
-          FEYNOS_EOF_039
-          cat > 'app/src/main/java/com/feynos/music/ui/SettingsScreen.kt' <<'FEYNOS_EOF_040'
+          FEYNOS_EOF_055
+          cat > 'app/src/main/java/com/feynos/music/ui/SettingsScreen.kt' <<'FEYNOS_EOF_056'
           @file:OptIn(ExperimentalMaterial3Api::class)
 
           package com.feynos.music.ui
@@ -6748,8 +7191,8 @@ jobs:
                   confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
               )
           }
-          FEYNOS_EOF_040
-          cat > 'app/src/main/java/com/feynos/music/ui/Shell.kt' <<'FEYNOS_EOF_041'
+          FEYNOS_EOF_056
+          cat > 'app/src/main/java/com/feynos/music/ui/Shell.kt' <<'FEYNOS_EOF_057'
           @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
           package com.feynos.music.ui
@@ -7063,8 +7506,8 @@ jobs:
                   dismissButton = { TextButton(onClick = onDismiss, enabled = progress == null) { Text("Later") } },
               )
           }
-          FEYNOS_EOF_041
-          cat > 'app/src/main/java/com/feynos/music/ui/Theme.kt' <<'FEYNOS_EOF_042'
+          FEYNOS_EOF_057
+          cat > 'app/src/main/java/com/feynos/music/ui/Theme.kt' <<'FEYNOS_EOF_058'
           package com.feynos.music.ui
 
           import android.os.Build
@@ -7109,7 +7552,7 @@ jobs:
                   CompositionLocalProvider(LocalContentColor provides scheme.onBackground, content = content)
               }
           }
-          FEYNOS_EOF_042
+          FEYNOS_EOF_058
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
