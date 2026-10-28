@@ -1683,6 +1683,7 @@ jobs:
               val lastMixGen: Long = 0,
               val autoCovers: Boolean = true,
               val theme: String = "feynos",
+              val layout: String = "feynos",
           ) {
               val loggedIn: Boolean get() = serverUrl.isNotBlank() && username.isNotBlank() && token.isNotBlank()
               val lbConnected: Boolean get() = lbToken.isNotBlank() && lbUser.isNotBlank()
@@ -1708,6 +1709,7 @@ jobs:
               private val kLastMix = longPreferencesKey("last_mix")
               private val kAutoCovers = booleanPreferencesKey("auto_covers")
               private val kTheme = stringPreferencesKey("theme")
+              private val kLayout = stringPreferencesKey("layout")
 
               private val _state = MutableStateFlow(AppSettings())
               val state: StateFlow<AppSettings> = _state.asStateFlow()
@@ -1745,6 +1747,7 @@ jobs:
                       lastMixGen = p[kLastMix] ?: d.lastMixGen,
                       autoCovers = p[kAutoCovers] ?: d.autoCovers,
                       theme = p[kTheme] ?: d.theme,
+                      layout = p[kLayout] ?: d.layout,
                   )
               }
 
@@ -1767,6 +1770,7 @@ jobs:
                   p[kCache] = s.cacheMb
                   p[kLastMix] = s.lastMixGen
                   p[kTheme] = s.theme
+                  p[kLayout] = s.layout
                   p[kAutoCovers] = s.autoCovers
               }
           }
@@ -6179,7 +6183,140 @@ jobs:
               }
           }
           FEYNOS_EOF_054
-          cat > 'app/src/main/java/com/feynos/music/ui/MainScreens.kt' <<'FEYNOS_EOF_055'
+          cat > 'app/src/main/java/com/feynos/music/ui/Layouts.kt' <<'FEYNOS_EOF_055'
+          package com.feynos.music.ui
+
+          import androidx.compose.foundation.background
+          import androidx.compose.foundation.clickable
+          import androidx.compose.foundation.layout.*
+          import androidx.compose.foundation.shape.RoundedCornerShape
+          import androidx.compose.material.icons.Icons
+          import androidx.compose.material.icons.rounded.*
+          import androidx.compose.material3.*
+          import androidx.compose.runtime.Composable
+          import androidx.compose.runtime.compositionLocalOf
+          import androidx.compose.ui.Alignment
+          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.draw.clip
+          import androidx.compose.ui.draw.shadow
+          import androidx.compose.ui.graphics.Color
+          import androidx.compose.ui.graphics.vector.ImageVector
+          import androidx.compose.ui.text.font.FontWeight
+          import androidx.compose.ui.text.style.TextOverflow
+          import androidx.compose.ui.unit.dp
+          import com.feynos.music.player.PlayerState
+
+          /** App layouts. The "-style" ones follow the structure of other music apps (no logos or branding). */
+          enum class UiLayout(val id: String, val label: String, val blurb: String) {
+              FEYNOS("feynos", "Feynos", "Four tabs, quick-pick grid on Home"),
+              SPOTIFY("spotify", "Spotify-style", "Home, Search and Your Library tabs, filter chips, lyrics and queue cards under the player"),
+              APPLE("apple", "Apple Music-style", "Listen Now with big Top Picks, floating mini player, artwork that shrinks when paused"),
+              YOUTUBE("youtube", "YouTube Music-style", "Mood chips, Listen again and Quick picks on Home, flat mini player, Up next / Lyrics tabs");
+
+              companion object {
+                  fun of(id: String): UiLayout = values().firstOrNull { it.id == id } ?: FEYNOS
+              }
+          }
+
+          val LocalUiLayout = compositionLocalOf { UiLayout.FEYNOS }
+
+          data class LayoutTab(val route: String, val label: String, val icon: ImageVector)
+
+          fun tabsFor(layout: UiLayout): List<LayoutTab> = when (layout) {
+              UiLayout.FEYNOS -> listOf(
+                  LayoutTab("home", "Home", Icons.Rounded.Home),
+                  LayoutTab("search", "Search", Icons.Rounded.Search),
+                  LayoutTab("foryou", "For You", Icons.Rounded.AutoAwesome),
+                  LayoutTab("library", "Library", Icons.Rounded.LibraryMusic),
+              )
+              UiLayout.SPOTIFY -> listOf(
+                  LayoutTab("home", "Home", Icons.Rounded.Home),
+                  LayoutTab("search", "Search", Icons.Rounded.Search),
+                  LayoutTab("library", "Your Library", Icons.Rounded.LibraryMusic),
+              )
+              UiLayout.APPLE -> listOf(
+                  LayoutTab("home", "Listen Now", Icons.Rounded.PlayCircle),
+                  LayoutTab("foryou", "Browse", Icons.Rounded.GridView),
+                  LayoutTab("library", "Library", Icons.Rounded.LibraryMusic),
+                  LayoutTab("search", "Search", Icons.Rounded.Search),
+              )
+              UiLayout.YOUTUBE -> listOf(
+                  LayoutTab("home", "Home", Icons.Rounded.Home),
+                  LayoutTab("foryou", "Explore", Icons.Rounded.Explore),
+                  LayoutTab("library", "Library", Icons.Rounded.LibraryMusic),
+              )
+          }
+
+          /** Apple Music-style: a floating, rounded mini player. */
+          @Composable
+          fun FloatingMiniPlayer(ps: PlayerState, onOpen: () -> Unit) {
+              val song = ps.song ?: return
+              Row(
+                  Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)
+                      .shadow(12.dp, RoundedCornerShape(16.dp))
+                      .clip(RoundedCornerShape(16.dp))
+                      .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                      .clickable(onClick = onOpen)
+                      .padding(8.dp),
+                  verticalAlignment = Alignment.CenterVertically,
+              ) {
+                  Cover(song.coverArt, Modifier.size(44.dp), size = 150, shape = RoundedCornerShape(8.dp), albumId = song.albumId)
+                  Spacer(Modifier.width(12.dp))
+                  Text(song.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                  IconButton(onClick = { graph.player.toggle() }) {
+                      if (ps.buffering && !ps.isPlaying) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+                      else Icon(if (ps.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, "Play or pause", modifier = Modifier.size(30.dp))
+                  }
+                  IconButton(onClick = { graph.player.next() }) { Icon(Icons.Rounded.FastForward, "Next", modifier = Modifier.size(28.dp)) }
+              }
+          }
+
+          /** YouTube Music-style: a flat, full-width mini player with the progress line on top. */
+          @Composable
+          fun FlatMiniPlayer(ps: PlayerState, onOpen: () -> Unit) {
+              val song = ps.song ?: return
+              val progress = if (ps.durationMs > 0) (ps.positionMs.toFloat() / ps.durationMs).coerceIn(0f, 1f) else 0f
+              Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainer).clickable(onClick = onOpen)) {
+                  Box(Modifier.fillMaxWidth().height(2.dp).background(Color.White.copy(alpha = 0.15f))) {
+                      Box(Modifier.fillMaxWidth(progress).fillMaxHeight().background(MaterialTheme.colorScheme.primary))
+                  }
+                  Row(Modifier.padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                      Cover(song.coverArt, Modifier.size(42.dp), size = 150, shape = RoundedCornerShape(4.dp), albumId = song.albumId)
+                      Spacer(Modifier.width(12.dp))
+                      Column(Modifier.weight(1f)) {
+                          Text(song.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                          Text(song.artist.orEmpty(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                      }
+                      IconButton(onClick = { graph.player.toggle() }) {
+                          if (ps.buffering && !ps.isPlaying) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+                          else Icon(if (ps.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, "Play or pause", modifier = Modifier.size(30.dp))
+                      }
+                      IconButton(onClick = { graph.player.next() }) { Icon(Icons.Rounded.SkipNext, "Next", modifier = Modifier.size(28.dp)) }
+                  }
+              }
+          }
+
+          /** Layout chooser for Settings. */
+          @Composable
+          fun LayoutPicker(current: String, onPick: (String) -> Unit) {
+              Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                  Text("Layout", style = MaterialTheme.typography.bodyLarge)
+                  UiLayout.values().forEach { l ->
+                      Row(
+                          Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { onPick(l.id) }.padding(vertical = 6.dp),
+                          verticalAlignment = Alignment.CenterVertically,
+                      ) {
+                          RadioButton(selected = l.id == current, onClick = { onPick(l.id) })
+                          Column(Modifier.weight(1f)) {
+                              Text(l.label, style = MaterialTheme.typography.bodyLarge)
+                              Text(l.blurb, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                          }
+                      }
+                  }
+              }
+          }
+          FEYNOS_EOF_055
+          cat > 'app/src/main/java/com/feynos/music/ui/MainScreens.kt' <<'FEYNOS_EOF_056'
           @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
           package com.feynos.music.ui
@@ -6305,6 +6442,8 @@ jobs:
           // ======================= Home =======================
 
           private data class HomeData(
+              val genres: List<Genre>,
+              val quickPicks: List<Song>,
               val recent: List<Song>,
               val mixes: List<Mix>,
               val newest: List<Album>,
@@ -6343,27 +6482,23 @@ jobs:
                       val recentAlbums = async { albums("recent") }
                       val random = async { albums("random") }
                       val starred = async { albums("starred") }
+                      val genres = async { runCatching { graph.api.genres().sortedByDescending { it.songCount }.take(14) }.getOrDefault(emptyList()) }
+                      val m = mixes.await()
+                      val picks = async(Dispatchers.IO) {
+                          (m.firstOrNull()?.let { graph.db.mixSongs(it.id) }.orEmpty() + recent.await()).distinctBy { it.id }.take(20)
+                      }
                       HomeData(
+                          genres.await(), picks.await(),
                           recent.await(), mixes.await(), newest.await(), frequent.await(),
                           recentAlbums.await(), random.await(), starred.await(), err,
                       )
                   }
               }
               val d = data.data
+              val layout = LocalUiLayout.current
               PullToRefreshBox(isRefreshing = data.loading && d != null, onRefresh = { data.reload() }, modifier = Modifier.fillMaxSize()) {
                   LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
-                      item {
-                          Row(
-                              Modifier.fillMaxWidth().statusBarsPadding().padding(start = 16.dp, end = 4.dp, top = 12.dp),
-                              verticalAlignment = Alignment.CenterVertically,
-                          ) {
-                              Text(greeting(), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                              IconButton(onClick = { nav.route("jam") }) { Icon(Icons.Rounded.Groups, "Jam") }
-                              IconButton(onClick = { nav.route("history") }) { Icon(Icons.Rounded.History, "History") }
-                              IconButton(onClick = { nav.route("stats") }) { Icon(Icons.Rounded.BarChart, "Stats") }
-                              IconButton(onClick = { nav.route("settings") }) { Icon(Icons.Rounded.Settings, "Settings") }
-                          }
-                      }
+                      item { HomeHeader(layout) }
                       if (d == null) {
                           item { if (data.error != null) ErrorBox(data.error ?: "") { data.reload() } else LoadingBox() }
                           return@LazyColumn
@@ -6378,7 +6513,13 @@ jobs:
                               }
                           }
                       }
-                      item { QuickGrid(d) }
+                      when (layout) {
+                          UiLayout.APPLE -> { appleHome(d, nav); return@LazyColumn }
+                          UiLayout.YOUTUBE -> { youtubeHome(d, nav); return@LazyColumn }
+                          UiLayout.SPOTIFY -> item { SpotifyChips() }
+                          else -> {}
+                      }
+                      item { QuickGrid(d, if (layout == UiLayout.SPOTIFY) 8 else 6) }
                       if (d.mixes.isNotEmpty()) {
                           item { SectionHeader("Made for you") { nav.route("foryou") } }
                           item {
@@ -6404,6 +6545,148 @@ jobs:
               }
           }
 
+          @Composable
+          private fun HomeHeader(layout: UiLayout) {
+              val nav = LocalNavi.current
+              Row(
+                  Modifier.fillMaxWidth().statusBarsPadding().padding(start = 16.dp, end = 4.dp, top = 12.dp),
+                  verticalAlignment = Alignment.CenterVertically,
+              ) {
+                  when (layout) {
+                      UiLayout.APPLE -> Text("Listen Now", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f))
+                      UiLayout.YOUTUBE -> Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                          Box(Modifier.size(28.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary), contentAlignment = Alignment.Center) {
+                              Icon(Icons.Rounded.PlayArrow, null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(20.dp))
+                          }
+                          Spacer(Modifier.width(6.dp))
+                          Text("Music", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                      }
+                      else -> Text(greeting(), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                  }
+                  if (layout == UiLayout.YOUTUBE) IconButton(onClick = { nav.route("search") }) { Icon(Icons.Rounded.Search, "Search") }
+                  IconButton(onClick = { nav.route("jam") }) { Icon(Icons.Rounded.Groups, "Jam") }
+                  IconButton(onClick = { nav.route("history") }) { Icon(Icons.Rounded.History, "History") }
+                  if (layout != UiLayout.YOUTUBE) IconButton(onClick = { nav.route("stats") }) { Icon(Icons.Rounded.BarChart, "Stats") }
+                  IconButton(onClick = { nav.route("settings") }) { Icon(Icons.Rounded.Settings, "Settings") }
+              }
+          }
+
+          /** Spotify-style filter chips under the greeting. */
+          @Composable
+          private fun SpotifyChips() {
+              val nav = LocalNavi.current
+              LazyRow(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                  item { FilterChip(selected = true, onClick = {}, label = { Text("Music") }) }
+                  item { FilterChip(selected = false, onClick = { nav.route("foryou") }, label = { Text("Made for you") }) }
+                  item { FilterChip(selected = false, onClick = { nav.route("liked") }, label = { Text("Liked") }) }
+                  item { FilterChip(selected = false, onClick = { nav.route("downloads") }, label = { Text("Downloaded") }) }
+                  item { FilterChip(selected = false, onClick = { nav.route("stats") }, label = { Text("Stats") }) }
+              }
+          }
+
+          /** Apple Music-style Listen Now: big Top Picks cards, then larger shelves. */
+          private fun LazyListScope.appleHome(d: HomeData, nav: Navi) {
+              if (d.mixes.isNotEmpty()) {
+                  item { SectionHeader("Top Picks for You") { nav.route("foryou") } }
+                  item {
+                      LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                          items(d.mixes) { m ->
+                              Column(Modifier.width(250.dp)) {
+                                  Text("MADE FOR YOU", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                  Spacer(Modifier.height(6.dp))
+                                  Box(Modifier.size(250.dp, 310.dp).shadow(10.dp, RoundedCornerShape(14.dp)).clip(RoundedCornerShape(14.dp)).clickable { nav.mix(m.id) }) {
+                                      MixArt(m, Modifier.fillMaxSize())
+                                      Box(
+                                          Modifier.align(Alignment.BottomStart).fillMaxWidth()
+                                              .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.75f))))
+                                              .padding(14.dp),
+                                      ) {
+                                          Text(m.description, color = Color.White, style = MaterialTheme.typography.bodyMedium, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                                      }
+                                  }
+                              }
+                          }
+                      }
+                  }
+              }
+              if (d.recent.isNotEmpty()) {
+                  item { SectionHeader("Recently Played") { nav.route("history") } }
+                  item {
+                      LazyRow(contentPadding = PaddingValues(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                          itemsIndexed(d.recent) { i, s -> SongCard(s, onClick = { graph.player.play(d.recent, i) }, modifier = Modifier.width(170.dp)) }
+                      }
+                  }
+              }
+              bigAlbumRow("Recently Added", d.newest) { nav.albums("newest") }
+              bigAlbumRow("Heavy Rotation", d.frequent) { nav.albums("frequent") }
+              bigAlbumRow("Your Favorites", d.starred) { nav.albums("starred") }
+              bigAlbumRow("Discover", d.random) { nav.albums("random") }
+          }
+
+          private fun LazyListScope.bigAlbumRow(title: String, albums: List<Album>, onSeeAll: () -> Unit) {
+              if (albums.isEmpty()) return
+              item { SectionHeader(title, onSeeAll) }
+              item {
+                  LazyRow(contentPadding = PaddingValues(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                      items(albums) { a -> AlbumCard(a, Modifier.width(170.dp)) }
+                  }
+              }
+          }
+
+          /** YouTube Music-style Home: mood chips, Listen again, Quick picks. */
+          private fun LazyListScope.youtubeHome(d: HomeData, nav: Navi) {
+              if (d.genres.isNotEmpty()) {
+                  item {
+                      LazyRow(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                          items(d.genres) { g ->
+                              Box(
+                                  Modifier.clip(RoundedCornerShape(8.dp)).background(Color.White.copy(alpha = 0.1f))
+                                      .clickable { nav.genre(g.value) }.padding(horizontal = 14.dp, vertical = 8.dp),
+                              ) { Text(g.value, style = MaterialTheme.typography.labelLarge) }
+                          }
+                      }
+                  }
+              }
+              if (d.recent.isNotEmpty() || d.recentAlbums.isNotEmpty()) {
+                  item { SectionHeader("Listen again") { nav.route("history") } }
+                  item {
+                      LazyHorizontalGrid(
+                          rows = GridCells.Fixed(2), modifier = Modifier.height(340.dp),
+                          contentPadding = PaddingValues(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(4.dp),
+                          verticalArrangement = Arrangement.spacedBy(4.dp),
+                      ) {
+                          items(d.recentAlbums.take(8)) { a -> AlbumCard(a, Modifier.width(118.dp)) }
+                          itemsIndexed(d.recent.take(12)) { i, s -> SongCard(s, onClick = { graph.player.play(d.recent, i) }, modifier = Modifier.width(118.dp)) }
+                      }
+                  }
+              }
+              if (d.quickPicks.isNotEmpty()) {
+                  item {
+                      Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 20.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                          Text("Quick picks", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                          OutlinedButton(onClick = { graph.player.play(d.quickPicks) }) { Text("Play all") }
+                      }
+                  }
+                  item {
+                      LazyHorizontalGrid(rows = GridCells.Fixed(4), modifier = Modifier.height(256.dp)) {
+                          itemsIndexed(d.quickPicks) { i, s -> SongRow(s, onClick = { graph.player.play(d.quickPicks, i) }, modifier = Modifier.width(320.dp)) }
+                      }
+                  }
+              }
+              if (d.mixes.isNotEmpty()) {
+                  item { SectionHeader("Mixed for you") { nav.route("foryou") } }
+                  item {
+                      LazyRow(contentPadding = PaddingValues(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                          items(d.mixes) { m -> MixCard(m, Modifier.width(170.dp)) }
+                      }
+                  }
+              }
+              albumRow("Albums for you", d.random) { nav.albums("random") }
+              albumRow("New releases", d.newest) { nav.albums("newest") }
+              albumRow("Your favorites", d.frequent) { nav.albums("frequent") }
+              albumRow("Liked albums", d.starred) { nav.albums("starred") }
+          }
+
           private fun LazyListScope.albumRow(title: String, albums: List<Album>, onSeeAll: () -> Unit) {
               if (albums.isEmpty()) return
               item { SectionHeader(title, onSeeAll) }
@@ -6417,13 +6700,13 @@ jobs:
           private class Tile(val title: String, val onClick: () -> Unit, val art: @Composable (Modifier) -> Unit)
 
           @Composable
-          private fun QuickGrid(d: HomeData) {
+          private fun QuickGrid(d: HomeData, max: Int = 6) {
               val nav = LocalNavi.current
               val tiles = buildList<Tile> {
                   add(Tile("Liked Songs", { nav.route("liked") }) { m -> GradientTile("Liked", Icons.Rounded.Favorite, m, seed = "liked-songs") })
                   d.mixes.take(3).forEach { mix -> add(Tile(mix.title, { nav.mix(mix.id) }) { m -> MixArt(mix, m) }) }
-                  d.recentAlbums.take(6 - size).forEach { a -> add(Tile(a.name, { nav.album(a.id) }) { m -> Cover(a.coverArt, m, size = 150, shape = RoundedCornerShape(0.dp), albumId = a.id) }) }
-                  if (size < 6) add(Tile("Downloads", { nav.route("downloads") }) { m -> GradientTile("Downloads", Icons.Rounded.DownloadDone, m, seed = "dl") })
+                  d.recentAlbums.take(max - size).forEach { a -> add(Tile(a.name, { nav.album(a.id) }) { m -> Cover(a.coverArt, m, size = 150, shape = RoundedCornerShape(0.dp), albumId = a.id) }) }
+                  if (size < max) add(Tile("Downloads", { nav.route("downloads") }) { m -> GradientTile("Downloads", Icons.Rounded.DownloadDone, m, seed = "dl") })
               }
               val cols = if (LocalConfiguration.current.screenWidthDp >= 600) 3 else 2
               Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -6772,14 +7055,16 @@ jobs:
                   dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
               )
           }
-          FEYNOS_EOF_055
-          cat > 'app/src/main/java/com/feynos/music/ui/NowPlaying.kt' <<'FEYNOS_EOF_056'
+          FEYNOS_EOF_056
+          cat > 'app/src/main/java/com/feynos/music/ui/NowPlaying.kt' <<'FEYNOS_EOF_057'
           @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
           package com.feynos.music.ui
 
           import android.graphics.drawable.BitmapDrawable
           import androidx.compose.animation.animateColorAsState
+          import androidx.compose.animation.core.animateFloatAsState
+          import androidx.compose.animation.core.spring
           import androidx.compose.animation.core.tween
           import androidx.compose.foundation.*
           import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -6845,6 +7130,7 @@ jobs:
               var sheet by remember { mutableStateOf<String?>(null) }
               var sideTab by remember { mutableIntStateOf(0) }
               var showSleep by remember { mutableStateOf(false) }
+              val layout = LocalUiLayout.current
 
               Box(
                   Modifier.fillMaxSize()
@@ -6853,8 +7139,14 @@ jobs:
                       .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {},
               ) {
                   Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
-                      NowPlayingTopBar(song, onClose, onSleep = { showSleep = true })
-                      if (wide) {
+                      if (!wide && layout == UiLayout.APPLE) Grabber(onClose) else NowPlayingTopBar(song, onClose, onSleep = { showSleep = true })
+                      if (!wide && layout == UiLayout.SPOTIFY) {
+                          SpotifyPortrait(ps, song, bg, onSleep = { showSleep = true }, onLyrics = { sheet = "lyrics" }, onQueue = { sheet = "queue" })
+                      } else if (!wide && layout == UiLayout.APPLE) {
+                          ApplePortrait(ps, song, onSleep = { showSleep = true }, onLyrics = { sheet = "lyrics" }, onQueue = { sheet = "queue" })
+                      } else if (!wide && layout == UiLayout.YOUTUBE) {
+                          YoutubePortrait(ps, song, onLyrics = { sheet = "lyrics" }, onQueue = { sheet = "queue" })
+                      } else if (wide) {
                           Row(Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 8.dp)) {
                               Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.Center) {
                                   // Biggest square that fits both the width and the height available.
@@ -7180,8 +7472,188 @@ jobs:
                   dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
               )
           }
-          FEYNOS_EOF_056
-          cat > 'app/src/main/java/com/feynos/music/ui/SettingsScreen.kt' <<'FEYNOS_EOF_057'
+
+          // ======================= Layout variants (phone, portrait) =======================
+
+          @Composable
+          private fun Grabber(onClose: () -> Unit) {
+              Box(Modifier.fillMaxWidth().clickable(onClick = onClose).padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
+                  Box(Modifier.size(40.dp, 5.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.4f)))
+              }
+          }
+
+          /** Spotify-style: the usual player, then lyrics and queue cards when you scroll down. */
+          @Composable
+          private fun SpotifyPortrait(ps: PlayerState, song: Song, bg: Color, onSleep: () -> Unit, onLyrics: () -> Unit, onQueue: () -> Unit) {
+              BoxWithConstraints(Modifier.fillMaxSize()) {
+                  val page = maxHeight
+                  Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp)) {
+                      Column(Modifier.height(page)) {
+                          Spacer(Modifier.weight(0.5f))
+                          Cover(
+                              song.coverArt, albumId = song.albumId,
+                              modifier = Modifier.fillMaxWidth().aspectRatio(1f).shadow(24.dp, RoundedCornerShape(10.dp)),
+                              size = 1000, shape = RoundedCornerShape(10.dp),
+                          )
+                          Spacer(Modifier.weight(0.5f))
+                          PlayerControls(ps, song, onSleep = onSleep, onLyrics = onLyrics, onQueue = onQueue)
+                          Spacer(Modifier.height(16.dp))
+                      }
+                      val card = lerp(bg, Color.White, 0.12f)
+                      Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(card).padding(16.dp)) {
+                          Row(verticalAlignment = Alignment.CenterVertically) {
+                              Text("Lyrics", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                              TextButton(onClick = onLyrics) { Text("Expand") }
+                          }
+                          LyricsView(song, ps, Modifier.fillMaxWidth().height(320.dp))
+                      }
+                      Spacer(Modifier.height(16.dp))
+                      Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(lerp(bg, Color.White, 0.06f)).padding(16.dp)) {
+                          Row(verticalAlignment = Alignment.CenterVertically) {
+                              Text("Next in queue", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                              TextButton(onClick = onQueue) { Text("Open queue") }
+                          }
+                          if (ps.upNext.isEmpty()) Text("Nothing queued", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                          ps.upNext.take(5).forEach { (idx, s) ->
+                              Row(
+                                  Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).clickable { graph.player.skipTo(idx) }.padding(vertical = 6.dp),
+                                  verticalAlignment = Alignment.CenterVertically,
+                              ) {
+                                  Cover(s.coverArt, Modifier.size(40.dp), size = 150, shape = RoundedCornerShape(4.dp), albumId = s.albumId)
+                                  Spacer(Modifier.width(12.dp))
+                                  Column(Modifier.weight(1f)) {
+                                      Text(s.title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                      Text(s.artist.orEmpty(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                  }
+                              }
+                          }
+                      }
+                      Spacer(Modifier.height(32.dp))
+                  }
+              }
+          }
+
+          /** Apple Music-style: artwork shrinks when paused, big transport buttons, extras along the bottom. */
+          @Composable
+          private fun ApplePortrait(ps: PlayerState, song: Song, onSleep: () -> Unit, onLyrics: () -> Unit, onQueue: () -> Unit) {
+              val scale by animateFloatAsState(if (ps.isPlaying) 1f else 0.8f, spring(dampingRatio = 0.6f, stiffness = 300f), label = "art")
+              var menu by remember { mutableStateOf(false) }
+              val dim = MaterialTheme.colorScheme.onSurfaceVariant
+              val on = MaterialTheme.colorScheme.primary
+              Column(Modifier.fillMaxSize().padding(horizontal = 28.dp)) {
+                  Spacer(Modifier.weight(0.35f))
+                  Cover(
+                      song.coverArt, albumId = song.albumId,
+                      modifier = Modifier.fillMaxWidth().aspectRatio(1f)
+                          .graphicsLayer { scaleX = scale; scaleY = scale }
+                          .shadow(if (ps.isPlaying) 30.dp else 10.dp, RoundedCornerShape(12.dp)),
+                      size = 1000, shape = RoundedCornerShape(12.dp),
+                  )
+                  Spacer(Modifier.weight(0.45f))
+                  Row(verticalAlignment = Alignment.CenterVertically) {
+                      Column(Modifier.weight(1f)) {
+                          Text(song.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 1, modifier = Modifier.basicMarquee())
+                          Text(song.artist.orEmpty(), style = MaterialTheme.typography.titleMedium, color = dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                      }
+                      Box {
+                          FilledTonalIconButton(onClick = { menu = true }, colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = Color.White.copy(alpha = 0.15f))) {
+                              Icon(Icons.Rounded.MoreHoriz, "More")
+                          }
+                          SongMenu(song, menu, { menu = false })
+                      }
+                  }
+                  Spacer(Modifier.height(10.dp))
+                  SeekBar(ps)
+                  Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+                      IconButton(onClick = { graph.player.previous() }, modifier = Modifier.size(64.dp)) { Icon(Icons.Rounded.FastRewind, "Previous", modifier = Modifier.size(44.dp)) }
+                      IconButton(onClick = { graph.player.toggle() }, modifier = Modifier.size(84.dp)) {
+                          if (ps.buffering && !ps.isPlaying) CircularProgressIndicator(Modifier.size(36.dp), strokeWidth = 3.dp)
+                          else Icon(if (ps.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, "Play or pause", modifier = Modifier.size(64.dp))
+                      }
+                      IconButton(onClick = { graph.player.next() }, modifier = Modifier.size(64.dp)) { Icon(Icons.Rounded.FastForward, "Next", modifier = Modifier.size(44.dp)) }
+                  }
+                  Spacer(Modifier.height(12.dp))
+                  Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                      val sleeping = ps.sleepAt != null || ps.sleepEndOfTrack
+                      IconButton(onClick = onLyrics) { Icon(Icons.Rounded.FormatQuote, "Lyrics", tint = dim) }
+                      IconButton(onClick = { graph.player.toggleShuffle() }) { Icon(Icons.Rounded.Shuffle, "Shuffle", tint = if (ps.shuffle) on else dim) }
+                      IconButton(onClick = { graph.player.cycleRepeat() }) {
+                          Icon(if (ps.repeat == Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat, "Repeat", tint = if (ps.repeat != Player.REPEAT_MODE_OFF) on else dim)
+                      }
+                      IconButton(onClick = onSleep) { Icon(Icons.Rounded.Bedtime, "Sleep timer", tint = if (sleeping) on else dim) }
+                      IconButton(onClick = onQueue) { Icon(Icons.AutoMirrored.Rounded.QueueMusic, "Queue", tint = dim) }
+                  }
+                  Spacer(Modifier.height(16.dp))
+              }
+          }
+
+          /** YouTube Music-style: action pills under the title and Up next / Lyrics tabs at the bottom. */
+          @Composable
+          private fun YoutubePortrait(ps: PlayerState, song: Song, onLyrics: () -> Unit, onQueue: () -> Unit) {
+              val overrides by graph.starOverrides.collectAsStateWithLifecycle()
+              val starred = overrides[song.id] ?: (song.starred != null)
+              val on = MaterialTheme.colorScheme.primary
+              Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
+                  Spacer(Modifier.weight(0.4f))
+                  Cover(
+                      song.coverArt, albumId = song.albumId,
+                      modifier = Modifier.fillMaxWidth().aspectRatio(1f), size = 1000, shape = RoundedCornerShape(6.dp),
+                  )
+                  Spacer(Modifier.weight(0.4f))
+                  Text(song.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, maxLines = 1, modifier = Modifier.basicMarquee())
+                  Text(song.artist.orEmpty(), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                  Spacer(Modifier.height(12.dp))
+                  LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                      item { Pill(if (starred) Icons.Rounded.ThumbUp else Icons.Rounded.ThumbUpOffAlt, if (starred) "Liked" else "Like", if (starred) on else null) { graph.toggleStar(song) } }
+                      item { Pill(Icons.AutoMirrored.Rounded.PlaylistAdd, "Save") { graph.addToPlaylistRequest.value = listOf(song) } }
+                      item { Pill(Icons.Rounded.Radio, "Radio") { graph.startRadio(song) } }
+                      item { Pill(Icons.Rounded.Download, "Download") { graph.download(listOf(song)) } }
+                  }
+                  Spacer(Modifier.height(8.dp))
+                  SeekBar(ps)
+                  Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                      IconButton(onClick = { graph.player.toggleShuffle() }) {
+                          Icon(Icons.Rounded.Shuffle, "Shuffle", tint = if (ps.shuffle) on else MaterialTheme.colorScheme.onSurface)
+                      }
+                      IconButton(onClick = { graph.player.previous() }, modifier = Modifier.size(56.dp)) { Icon(Icons.Rounded.SkipPrevious, "Previous", modifier = Modifier.size(38.dp)) }
+                      FilledIconButton(
+                          onClick = { graph.player.toggle() }, modifier = Modifier.size(72.dp),
+                          colors = IconButtonDefaults.filledIconButtonColors(containerColor = Color.White, contentColor = Color.Black),
+                      ) {
+                          if (ps.buffering && !ps.isPlaying) CircularProgressIndicator(Modifier.size(28.dp), color = Color.Black, strokeWidth = 3.dp)
+                          else Icon(if (ps.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, "Play or pause", modifier = Modifier.size(40.dp))
+                      }
+                      IconButton(onClick = { graph.player.next() }, modifier = Modifier.size(56.dp)) { Icon(Icons.Rounded.SkipNext, "Next", modifier = Modifier.size(38.dp)) }
+                      IconButton(onClick = { graph.player.cycleRepeat() }) {
+                          Icon(
+                              if (ps.repeat == Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat, "Repeat",
+                              tint = if (ps.repeat != Player.REPEAT_MODE_OFF) on else MaterialTheme.colorScheme.onSurface,
+                          )
+                      }
+                  }
+                  Spacer(Modifier.height(8.dp))
+                  Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                      TextButton(onClick = onQueue) { Text("UP NEXT", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface) }
+                      TextButton(onClick = onLyrics) { Text("LYRICS", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface) }
+                  }
+                  Spacer(Modifier.height(8.dp))
+              }
+          }
+
+          @Composable
+          private fun Pill(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, tint: Color? = null, onClick: () -> Unit) {
+              Row(
+                  Modifier.clip(CircleShape).background(Color.White.copy(alpha = 0.12f)).clickable(onClick = onClick)
+                      .padding(horizontal = 14.dp, vertical = 8.dp),
+                  verticalAlignment = Alignment.CenterVertically,
+              ) {
+                  Icon(icon, null, tint = tint ?: MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(18.dp))
+                  Spacer(Modifier.width(6.dp))
+                  Text(label, style = MaterialTheme.typography.labelLarge)
+              }
+          }
+          FEYNOS_EOF_057
+          cat > 'app/src/main/java/com/feynos/music/ui/SettingsScreen.kt' <<'FEYNOS_EOF_058'
           @file:OptIn(ExperimentalMaterial3Api::class)
 
           package com.feynos.music.ui
@@ -7334,6 +7806,7 @@ jobs:
                       }
 
                       Header("Appearance")
+                      LayoutPicker(s.layout) { id -> set { it.copy(layout = id) } }
                       ThemePicker(current = s.theme, overridden = s.dynamicColor) { id -> set { it.copy(theme = id, dynamicColor = false) } }
                       Toggle(Icons.Rounded.Palette, "Use wallpaper colours", "Material You colours on Android 12+ (replaces the theme)", s.dynamicColor) { v -> set { it.copy(dynamicColor = v) } }
 
@@ -7492,8 +7965,8 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_057
-          cat > 'app/src/main/java/com/feynos/music/ui/Shell.kt' <<'FEYNOS_EOF_058'
+          FEYNOS_EOF_058
+          cat > 'app/src/main/java/com/feynos/music/ui/Shell.kt' <<'FEYNOS_EOF_059'
           @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
           package com.feynos.music.ui
@@ -7551,14 +8024,9 @@ jobs:
                   if (graph.settings.current.autoUpdate) update = runCatching { graph.updater.check() }.getOrNull()
               }
 
-              val tabs = remember {
-                  listOf(
-                      NavTab("home", "Home", Icons.Rounded.Home),
-                      NavTab("search", "Search", Icons.Rounded.Search),
-                      NavTab("foryou", "For You", Icons.Rounded.AutoAwesome),
-                      NavTab("library", "Library", Icons.Rounded.LibraryMusic),
-                  )
-              }
+              val appSettings by graph.settings.state.collectAsStateWithLifecycle()
+              val layout = UiLayout.of(appSettings.layout)
+              val tabs = remember(layout) { tabsFor(layout).map { NavTab(it.route, it.label, it.icon) } }
               val entry by nav.currentBackStackEntryAsState()
 
               fun select(route: String) {
@@ -7571,7 +8039,7 @@ jobs:
                   }
               }
 
-              CompositionLocalProvider(LocalNavi provides navi) {
+              CompositionLocalProvider(LocalNavi provides navi, LocalUiLayout provides layout) {
                   Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
                       Row(Modifier.fillMaxSize()) {
                           if (wide) {
@@ -7617,7 +8085,11 @@ jobs:
                                   SnackbarHost(snack, Modifier.align(Alignment.BottomCenter))
                               }
                               JamBanner()
-                              if (ps.song != null) MiniPlayer(ps, onOpen = { showPlayer = true })
+                              if (ps.song != null) when (layout) {
+                                  UiLayout.APPLE -> FloatingMiniPlayer(ps, onOpen = { showPlayer = true })
+                                  UiLayout.YOUTUBE -> FlatMiniPlayer(ps, onOpen = { showPlayer = true })
+                                  else -> MiniPlayer(ps, onOpen = { showPlayer = true })
+                              }
                               if (!wide) {
                                   NavigationBar(containerColor = MaterialTheme.colorScheme.surface, tonalElevation = 0.dp) {
                                       tabs.forEach { t ->
@@ -7807,8 +8279,8 @@ jobs:
                   dismissButton = { TextButton(onClick = onDismiss, enabled = progress == null) { Text("Later") } },
               )
           }
-          FEYNOS_EOF_058
-          cat > 'app/src/main/java/com/feynos/music/ui/Theme.kt' <<'FEYNOS_EOF_059'
+          FEYNOS_EOF_059
+          cat > 'app/src/main/java/com/feynos/music/ui/Theme.kt' <<'FEYNOS_EOF_060'
           package com.feynos.music.ui
 
           import android.os.Build
@@ -7889,7 +8361,7 @@ jobs:
                   CompositionLocalProvider(LocalContentColor provides scheme.onBackground, content = content)
               }
           }
-          FEYNOS_EOF_059
+          FEYNOS_EOF_060
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
