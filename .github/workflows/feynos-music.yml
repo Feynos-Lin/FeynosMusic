@@ -1682,6 +1682,7 @@ jobs:
               val cacheMb: Int = 1024,
               val lastMixGen: Long = 0,
               val autoCovers: Boolean = true,
+              val theme: String = "feynos",
           ) {
               val loggedIn: Boolean get() = serverUrl.isNotBlank() && username.isNotBlank() && token.isNotBlank()
               val lbConnected: Boolean get() = lbToken.isNotBlank() && lbUser.isNotBlank()
@@ -1706,6 +1707,7 @@ jobs:
               private val kCache = intPreferencesKey("cache_mb")
               private val kLastMix = longPreferencesKey("last_mix")
               private val kAutoCovers = booleanPreferencesKey("auto_covers")
+              private val kTheme = stringPreferencesKey("theme")
 
               private val _state = MutableStateFlow(AppSettings())
               val state: StateFlow<AppSettings> = _state.asStateFlow()
@@ -1742,6 +1744,7 @@ jobs:
                       cacheMb = p[kCache] ?: d.cacheMb,
                       lastMixGen = p[kLastMix] ?: d.lastMixGen,
                       autoCovers = p[kAutoCovers] ?: d.autoCovers,
+                      theme = p[kTheme] ?: d.theme,
                   )
               }
 
@@ -1763,6 +1766,7 @@ jobs:
                   p[kAutoUpdate] = s.autoUpdate
                   p[kCache] = s.cacheMb
                   p[kLastMix] = s.lastMixGen
+                  p[kTheme] = s.theme
                   p[kAutoCovers] = s.autoCovers
               }
           }
@@ -2490,7 +2494,7 @@ jobs:
                   }
                   setContent {
                       val settings by App.graph.settings.state.collectAsStateWithLifecycle()
-                      FeynosTheme(dynamic = settings.dynamicColor) {
+                      FeynosTheme(dynamic = settings.dynamicColor, theme = settings.theme) {
                           if (settings.loggedIn) AppShell() else LoginScreen()
                       }
                   }
@@ -6033,7 +6037,7 @@ jobs:
                       item {
                           Box(
                               Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
-                                  .background(Brush.linearGradient(listOf(Color(0xFF6C3CE0), Color(0xFFD81B60))))
+                                  .background(Brush.linearGradient(listOf(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.primary)))
                                   .padding(20.dp),
                           ) {
                               Column {
@@ -6160,7 +6164,7 @@ jobs:
               if (jam.role == JamRole.NONE) return
               Row(
                   Modifier.fillMaxWidth().padding(horizontal = 8.dp).clip(RoundedCornerShape(8.dp))
-                      .background(Brush.horizontalGradient(listOf(Color(0xFF6C3CE0), Color(0xFFD81B60))))
+                      .background(Brush.horizontalGradient(listOf(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.primary)))
                       .clickable { nav.route("jam") }.padding(horizontal = 12.dp, vertical = 6.dp),
                   verticalAlignment = Alignment.CenterVertically,
               ) {
@@ -6246,14 +6250,14 @@ jobs:
 
               Column(
                   Modifier.fillMaxSize()
-                      .background(Brush.verticalGradient(listOf(Color(0xFF3A2766), MaterialTheme.colorScheme.background)))
+                      .background(Brush.verticalGradient(listOf(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.background)))
                       .statusBarsPadding().imePadding()
                       .verticalScroll(rememberScrollState())
                       .padding(24.dp),
               ) {
                   Spacer(Modifier.height(48.dp))
                   Box(
-                      Modifier.size(72.dp).clip(RoundedCornerShape(20.dp)).background(Color(0xFF6C3CE0)),
+                      Modifier.size(72.dp).clip(RoundedCornerShape(20.dp)).background(MaterialTheme.colorScheme.primary),
                       contentAlignment = Alignment.Center,
                   ) { Icon(Icons.Rounded.MusicNote, null, tint = Color.White, modifier = Modifier.size(44.dp)) }
                   Spacer(Modifier.height(20.dp))
@@ -7184,6 +7188,11 @@ jobs:
 
           import android.content.Intent
           import android.net.Uri
+          import androidx.compose.foundation.background
+          import androidx.compose.foundation.border
+          import androidx.compose.foundation.horizontalScroll
+          import androidx.compose.foundation.shape.CircleShape
+          import androidx.compose.ui.draw.clip
           import androidx.compose.foundation.clickable
           import androidx.compose.foundation.layout.*
           import androidx.compose.foundation.rememberScrollState
@@ -7325,7 +7334,8 @@ jobs:
                       }
 
                       Header("Appearance")
-                      Toggle(Icons.Rounded.Palette, "Use wallpaper colours", "Material You colours on Android 12+", s.dynamicColor) { v -> set { it.copy(dynamicColor = v) } }
+                      ThemePicker(current = s.theme, overridden = s.dynamicColor) { id -> set { it.copy(theme = id, dynamicColor = false) } }
+                      Toggle(Icons.Rounded.Palette, "Use wallpaper colours", "Material You colours on Android 12+ (replaces the theme)", s.dynamicColor) { v -> set { it.copy(dynamicColor = v) } }
 
                       Header("Updates")
                       Toggle(Icons.Rounded.SystemUpdate, "Check for updates on start", "Looks for new releases on GitHub", s.autoUpdate) { v -> set { it.copy(autoUpdate = v) } }
@@ -7437,6 +7447,50 @@ jobs:
                   },
                   confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
               )
+          }
+
+          /** Swatches for each colour theme; tap one to switch. */
+          @Composable
+          private fun ThemePicker(current: String, overridden: Boolean, onPick: (String) -> Unit) {
+              Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                  Text("Theme", style = MaterialTheme.typography.bodyLarge)
+                  Text(
+                      if (overridden) "Wallpaper colours are on. Pick a theme to use it instead." else themeById(current).name,
+                      style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                  )
+                  Row(
+                      Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 12.dp),
+                      horizontalArrangement = Arrangement.spacedBy(14.dp),
+                  ) {
+                      Themes.forEach { t ->
+                          val selected = !overridden && t.id == current
+                          Column(
+                              Modifier.width(76.dp).clickable { onPick(t.id) },
+                              horizontalAlignment = Alignment.CenterHorizontally,
+                          ) {
+                              Box(
+                                  Modifier.size(56.dp)
+                                      .border(if (selected) 3.dp else 1.dp, if (selected) Color(t.accent) else MaterialTheme.colorScheme.outline, CircleShape)
+                                      .padding(5.dp)
+                                      .clip(CircleShape)
+                                      .background(Color(t.background)),
+                                  contentAlignment = Alignment.Center,
+                              ) {
+                                  Box(Modifier.size(24.dp).clip(CircleShape).background(Color(t.accent)))
+                                  if (selected) Icon(Icons.Rounded.Check, null, tint = Color(t.onAccent), modifier = Modifier.size(16.dp))
+                              }
+                              Text(
+                                  t.name.substringBefore(" ("), style = MaterialTheme.typography.labelSmall,
+                                  maxLines = 2, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.padding(top = 6.dp),
+                              )
+                              t.name.substringAfter("(", "").removeSuffix(")").takeIf { it.isNotBlank() }?.let {
+                                  Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                      maxLines = 2, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                              }
+                          }
+                      }
+                  }
+              }
           }
           FEYNOS_EOF_057
           cat > 'app/src/main/java/com/feynos/music/ui/Shell.kt' <<'FEYNOS_EOF_058'
@@ -7758,42 +7812,78 @@ jobs:
           package com.feynos.music.ui
 
           import android.os.Build
+          import androidx.compose.material3.ColorScheme
           import androidx.compose.material3.LocalContentColor
           import androidx.compose.material3.MaterialTheme
-          import androidx.compose.runtime.CompositionLocalProvider
           import androidx.compose.material3.darkColorScheme
           import androidx.compose.material3.dynamicDarkColorScheme
           import androidx.compose.runtime.Composable
+          import androidx.compose.runtime.CompositionLocalProvider
           import androidx.compose.ui.graphics.Color
           import androidx.compose.ui.platform.LocalContext
+
+          /** A colour theme. The "-style" ones borrow the colour feel of other music apps (no logos or branding). */
+          data class AppTheme(
+              val id: String,
+              val name: String,
+              val accent: Long,
+              val onAccent: Long,
+              val background: Long,
+              val surface: Long,
+              val variant: Long,
+              val container: Long,
+          )
+
+          val Themes = listOf(
+              AppTheme("feynos", "Feynos purple", 0xFFA970FF, 0xFF14002E, 0xFF0E0E12, 0xFF131318, 0xFF26262F, 0xFF3A2766),
+              AppTheme("spotify", "Green & black (Spotify-style)", 0xFF1ED760, 0xFF000000, 0xFF121212, 0xFF181818, 0xFF2A2A2A, 0xFF0F3D22),
+              AppTheme("apple", "Rose red (Apple Music-style)", 0xFFFA2D48, 0xFFFFFFFF, 0xFF000000, 0xFF111113, 0xFF2C2C2E, 0xFF4A1019),
+              AppTheme("youtube", "Red & black (YouTube Music-style)", 0xFFFF0033, 0xFFFFFFFF, 0xFF030303, 0xFF0F0F0F, 0xFF272727, 0xFF4A0010),
+              AppTheme("soundcloud", "Orange (SoundCloud-style)", 0xFFFF5500, 0xFFFFFFFF, 0xFF121212, 0xFF1A1A1A, 0xFF2E2E2E, 0xFF4D1C00),
+              AppTheme("tidal", "Black & cyan (Tidal-style)", 0xFF33FFEE, 0xFF00201D, 0xFF000000, 0xFF0D0D0D, 0xFF242424, 0xFF0B3D3A),
+              AppTheme("amazon", "Teal (Amazon Music-style)", 0xFF25D1DA, 0xFF00282A, 0xFF0B0F12, 0xFF12181D, 0xFF232F3E, 0xFF0E3B42),
+              AppTheme("deezer", "Violet (Deezer-style)", 0xFFA238FF, 0xFFFFFFFF, 0xFF0F0D13, 0xFF191622, 0xFF2A2533, 0xFF3B1A66),
+          )
+
+          fun themeById(id: String): AppTheme = Themes.firstOrNull { it.id == id } ?: Themes[0]
 
           val Accent = Color(0xFFA970FF)
           val AppBackground = Color(0xFF0E0E12)
 
-          private val DarkColors = darkColorScheme(
-              primary = Accent,
-              onPrimary = Color(0xFF14002E),
-              primaryContainer = Color(0xFF3A2766),
-              onPrimaryContainer = Color(0xFFEBDDFF),
-              secondary = Color(0xFF7FE0C4),
-              onSecondary = Color(0xFF00382C),
-              background = AppBackground,
-              onBackground = Color(0xFFEDEDF2),
-              surface = Color(0xFF131318),
-              onSurface = Color(0xFFEDEDF2),
-              surfaceVariant = Color(0xFF26262F),
-              onSurfaceVariant = Color(0xFFA9A9B8),
-              surfaceContainer = Color(0xFF1A1A21),
-              surfaceContainerHigh = Color(0xFF22222A),
-              surfaceContainerHighest = Color(0xFF2B2B35),
-              outline = Color(0xFF4A4A57),
+          private fun lighten(c: Color, amount: Float) = Color(
+              c.red + (1 - c.red) * amount, c.green + (1 - c.green) * amount, c.blue + (1 - c.blue) * amount, 1f,
           )
 
+          fun schemeFor(t: AppTheme): ColorScheme {
+              val accent = Color(t.accent)
+              val surface = Color(t.surface)
+              val variant = Color(t.variant)
+              return darkColorScheme(
+                  primary = accent,
+                  onPrimary = Color(t.onAccent),
+                  primaryContainer = Color(t.container),
+                  onPrimaryContainer = lighten(accent, 0.75f),
+                  secondary = lighten(accent, 0.35f),
+                  onSecondary = Color(t.onAccent),
+                  background = Color(t.background),
+                  onBackground = Color(0xFFEDEDF2),
+                  surface = surface,
+                  onSurface = Color(0xFFEDEDF2),
+                  surfaceVariant = variant,
+                  onSurfaceVariant = Color(0xFFA9A9B8),
+                  surfaceContainer = lighten(surface, 0.03f),
+                  surfaceContainerHigh = lighten(surface, 0.06f),
+                  surfaceContainerHighest = lighten(surface, 0.1f),
+                  outline = lighten(variant, 0.15f),
+              )
+          }
+
           @Composable
-          fun FeynosTheme(dynamic: Boolean, content: @Composable () -> Unit) {
+          fun FeynosTheme(dynamic: Boolean, theme: String = "feynos", content: @Composable () -> Unit) {
+              val t = themeById(theme)
               val scheme = if (dynamic && Build.VERSION.SDK_INT >= 31) {
                   dynamicDarkColorScheme(LocalContext.current).copy(background = AppBackground)
-              } else DarkColors
+              } else schemeFor(t)
               MaterialTheme(colorScheme = scheme) {
                   // Sets the default text/icon colour to light-on-dark for the whole app.
                   CompositionLocalProvider(LocalContentColor provides scheme.onBackground, content = content)
