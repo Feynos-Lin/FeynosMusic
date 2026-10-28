@@ -59,6 +59,7 @@ const UI = {
   refreshTimer: null,
 
   async start() {
+    applyTheme();
     APP_VERSION = await window.native.version();
     Player.init();
     Jam.init();
@@ -230,7 +231,7 @@ const UI = {
     const h = new Date().getHours();
     const greet = h < 5 ? 'Good evening' : h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
     const quick = [
-      `<div class="q" data-act="nav" data-route="liked"><div class="qa" style="background:linear-gradient(135deg,#6c3ce0,#00acc1);display:grid;place-items:center">${ICON.heartFill}</div>Liked Songs</div>`,
+      `<div class="q" data-act="nav" data-route="liked"><div class="qa" style="background:linear-gradient(135deg,var(--container),var(--accent));display:grid;place-items:center">${ICON.heartFill}</div>Liked Songs</div>`,
       ...Store.mixes.slice(0, 3).map((m) => `<div class="q" data-act="go-mix" data-id="${esc(m.id)}"><div class="qa" style="background:${colorFor(m.id + m.title)}"></div>${esc(m.title)}</div>`),
       ...recent.slice(0, 4).map((a) => `<div class="q" data-act="go-album" data-id="${esc(a.id)}">${img(a.coverArt, a.id, 120, '')}${esc(a.name)}</div>`),
     ].slice(0, 8);
@@ -386,7 +387,7 @@ const UI = {
   async view_liked() {
     const st = await API.starred();
     const key = this.reg(st.song);
-    return this.hero(`<div class="art" style="background:linear-gradient(135deg,#6c3ce0,#00acc1);display:grid;place-items:center;color:#fff">${ICON.heartFill.replace('<svg', '<svg width="90" height="90"')}</div>`, 'Playlist', 'Liked Songs', `${st.song.length} songs`)
+    return this.hero(`<div class="art" style="background:linear-gradient(135deg,var(--container),var(--accent));display:grid;place-items:center;color:#fff">${ICON.heartFill.replace('<svg', '<svg width="90" height="90"')}</div>`, 'Playlist', 'Liked Songs', `${st.song.length} songs`)
       + this.actions(key) + this.songRows(st.song, { empty: 'Like songs with the heart to see them here.' })
       + (st.album.length ? `<h2>Liked albums</h2><div class="row">${st.album.map((a) => this.albumCard(a)).join('')}</div>` : '')
       + (st.artist.length ? `<h2>Followed artists</h2><div class="row">${st.artist.map((a) => this.artistCard(a)).join('')}</div>` : '');
@@ -473,6 +474,7 @@ const UI = {
       ${sw('syncMixes', 'Save mixes to Navidrome', 'Keep a copy of each mix as a server playlist')}
       <h2>Cover art</h2><div class="setting"><div class="l"><div>Find missing cover art</div><div class="s">Looks up art on MusicBrainz, Deezer and iTunes</div></div><button class="btn" data-act="nav" data-route="covers">Open</button></div>
       ${sw('autoCovers', 'Fix new albums automatically', 'Checks for missing art when your mixes refresh')}
+      <h2>Theme</h2><div class="themes">${THEMES.map((t) => `<div class="theme ${t.id === Settings.theme ? 'on' : ''}" data-act="theme" data-id="${t.id}"><div class="sw" style="background:${t.bg}"><span style="background:${t.accent}"></span></div>${esc(t.name.split(' (')[0])}${t.name.includes('(') ? `<div class="sub">${esc(t.name.split('(')[1].replace(')', ''))}</div>` : ''}</div>`).join('')}</div>
       <h2>Updates</h2>${sw('autoUpdate', 'Check for updates on start')}
       <div class="setting"><div class="l"><div>Feynos Music for Linux ${esc(APP_VERSION)}</div></div><button class="btn" data-act="check-update">Check now</button></div></div>`;
   },
@@ -866,6 +868,12 @@ const UI = {
         Object.assign(Settings, { lbToken: '', lbUser: '' });
         saveSettings();
         this.render();
+        break;
+      case 'theme':
+        Settings.theme = d.id;
+        saveSettings();
+        applyTheme();
+        this.render(true);
         break;
       case 'check-update': this.checkUpdate(false); break;
       case 'open-url': ev.preventDefault(); window.native.openExternal(d.url); break;

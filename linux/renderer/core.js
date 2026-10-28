@@ -115,10 +115,35 @@ const Settings = Object.assign(
     scrobbleNavidrome: true, scrobbleLb: true,
     maxBitrate: 0, format: 'raw',
     syncMixes: false, autoCovers: true, autoUpdate: true,
-    lastMixGen: 0, volume: 0.9,
+    lastMixGen: 0, volume: 0.9, theme: 'feynos',
   },
   DB.get('settings', {}),
 );
+
+// Colour themes. The "-style" ones borrow the colour feel of other music apps (no logos or branding).
+const THEMES = [
+  { id: 'feynos', name: 'Feynos purple', accent: '#a970ff', on: '#14002e', bg: '#0e0e12', panel: '#15151b', panel2: '#1c1c24', panel3: '#26262f', container: '#3a2766', side: '#000000' },
+  { id: 'spotify', name: 'Green & black (Spotify-style)', accent: '#1ed760', on: '#000000', bg: '#121212', panel: '#181818', panel2: '#1f1f1f', panel3: '#2a2a2a', container: '#0f3d22', side: '#000000' },
+  { id: 'apple', name: 'Rose red (Apple Music-style)', accent: '#fa2d48', on: '#ffffff', bg: '#1c1c1e', panel: '#232325', panel2: '#2a2a2c', panel3: '#3a3a3c', container: '#4a1019', side: '#141416' },
+  { id: 'youtube', name: 'Red & black (YouTube Music-style)', accent: '#ff0033', on: '#ffffff', bg: '#030303', panel: '#0f0f0f', panel2: '#181818', panel3: '#272727', container: '#4a0010', side: '#000000' },
+  { id: 'soundcloud', name: 'Orange (SoundCloud-style)', accent: '#ff5500', on: '#ffffff', bg: '#121212', panel: '#1a1a1a', panel2: '#222222', panel3: '#2e2e2e', container: '#4d1c00', side: '#0a0a0a' },
+  { id: 'tidal', name: 'Black & cyan (Tidal-style)', accent: '#33ffee', on: '#00201d', bg: '#000000', panel: '#0d0d0d', panel2: '#171717', panel3: '#242424', container: '#0b3d3a', side: '#000000' },
+  { id: 'amazon', name: 'Teal (Amazon Music-style)', accent: '#25d1da', on: '#00282a', bg: '#0b0f12', panel: '#12181d', panel2: '#19212a', panel3: '#232f3e', container: '#0e3b42', side: '#05080a' },
+  { id: 'deezer', name: 'Violet (Deezer-style)', accent: '#a238ff', on: '#ffffff', bg: '#0f0d13', panel: '#191622', panel2: '#201c2b', panel3: '#2a2533', container: '#3b1a66', side: '#09080c' },
+];
+
+function applyTheme() {
+  const t = THEMES.find((x) => x.id === Settings.theme) || THEMES[0];
+  const r = document.documentElement.style;
+  r.setProperty('--accent', t.accent);
+  r.setProperty('--on-accent', t.on);
+  r.setProperty('--bg', t.bg);
+  r.setProperty('--panel', t.panel);
+  r.setProperty('--panel2', t.panel2);
+  r.setProperty('--panel3', t.panel3);
+  r.setProperty('--container', t.container);
+  r.setProperty('--side', t.side);
+}
 
 function saveSettings() {
   DB.set('settings', Settings);

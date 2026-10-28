@@ -35,7 +35,10 @@ struct RootView: View {
     @EnvironmentObject var app: AppState
 
     var body: some View {
+        let theme = TVTheme.byId(settings.theme)
         ZStack(alignment: .bottom) {
+            LinearGradient(colors: [theme.container.opacity(0.55), theme.background, theme.background], startPoint: .top, endPoint: .bottom)
+                .ignoresSafeArea()
             if settings.addingProfile || settings.profiles.isEmpty || !settings.loggedIn {
                 LoginView()
             } else if !settings.picked {
@@ -54,6 +57,7 @@ struct RootView: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
+        .tint(theme.accent)
         .animation(.easeOut, value: toaster.message)
         .sheet(item: Binding(
             get: { app.addToPlaylist.map { SongBatch(songs: $0) } },
@@ -104,7 +108,7 @@ struct LoginView: View {
                     .font(.system(size: 90, weight: .bold))
                     .foregroundStyle(.white)
                     .frame(width: 180, height: 180)
-                    .background(RoundedRectangle(cornerRadius: 40).fill(Color(red: 0.42, green: 0.24, blue: 0.88)))
+                    .background(RoundedRectangle(cornerRadius: 40).fill(TVTheme.byId(settings.theme).accent))
                 Text("Feynos Music").font(.largeTitle).bold()
                 Text(settings.profiles.isEmpty ? "Sign in to your Navidrome server" : "Add a profile").font(.title3).foregroundStyle(.secondary)
                 Text("Each profile has its own login, ListenBrainz account, history and mixes, so everyone in the house gets their own.")

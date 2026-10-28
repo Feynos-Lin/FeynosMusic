@@ -111,6 +111,20 @@ struct SettingsView: View {
                     Text(settings.lastMixGen > 0 ? "Last updated \(timeAgo(Date(timeIntervalSince1970: settings.lastMixGen))). Mixes refresh when you open the app once a week has passed." : "Mixes refresh weekly when you open the app.")
                 }
 
+                Section("Theme") {
+                    Picker("Theme", selection: $settings.theme) {
+                        ForEach(TVTheme.all) { t in
+                            Text(t.name).tag(t.id)
+                        }
+                    }
+                    HStack(spacing: 16) {
+                        ForEach(TVTheme.all) { t in
+                            Circle().fill(t.accent).frame(width: 34, height: 34)
+                                .overlay(Circle().stroke(Color.white, lineWidth: t.id == settings.theme ? 4 : 0))
+                        }
+                    }
+                    .padding(.vertical, 8)
+                }
                 Section("Cover art") {
                     NavigationLink(value: Route.covers) { Text(covers.running ? "Finding cover art… \(covers.done)/\(covers.total)" : "Find missing cover art") }
                     Toggle("Fix new albums automatically", isOn: $settings.autoCovers)

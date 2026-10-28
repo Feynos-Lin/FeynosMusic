@@ -44,6 +44,7 @@ final class AppSettings: ObservableObject {
     @Published var format: String { didSet { d.set(format, forKey: "format") } }
     @Published var syncMixes: Bool { didSet { d.set(syncMixes, forKey: "syncMixes") } }
     @Published var autoCovers: Bool { didSet { d.set(autoCovers, forKey: "autoCovers") } }
+    @Published var theme: String { didSet { d.set(theme, forKey: "theme") } }
 
     private var applying = false
 
@@ -54,6 +55,7 @@ final class AppSettings: ObservableObject {
         format = d.string(forKey: "format") ?? "raw"
         syncMixes = d.object(forKey: "syncMixes") as? Bool ?? false
         autoCovers = d.object(forKey: "autoCovers") as? Bool ?? true
+        theme = d.string(forKey: "theme") ?? "feynos"
 
         if let data = d.data(forKey: "profiles"), let list = try? JSONDecoder().decode([Profile].self, from: data) {
             profiles = list
