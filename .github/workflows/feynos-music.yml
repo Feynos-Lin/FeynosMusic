@@ -319,7 +319,7 @@ jobs:
           <?xml version="1.0" encoding="utf-8"?>
           <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
               <solid android:color="#F0181820" />
-              <corners android:radius="24dp" />
+              <corners android:radius="20dp" />
           </shape>
           FEYNOS_EOF_014
           cat > 'app/src/main/res/drawable/widget_cover_bg.xml' <<'FEYNOS_EOF_015'
@@ -443,6 +443,7 @@ jobs:
           FEYNOS_EOF_018
           cat > 'app/src/main/res/layout/widget_player.xml' <<'FEYNOS_EOF_019'
           <?xml version="1.0" encoding="utf-8"?>
+          <!-- Compact one-row player (4x1): art, song/artist, then previous / play / next. -->
           <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
               android:id="@android:id/background"
               android:layout_width="match_parent"
@@ -450,12 +451,15 @@ jobs:
               android:background="@drawable/widget_bg"
               android:gravity="center_vertical"
               android:orientation="horizontal"
-              android:padding="12dp">
+              android:paddingStart="8dp"
+              android:paddingTop="6dp"
+              android:paddingEnd="6dp"
+              android:paddingBottom="6dp">
 
               <ImageView
                   android:id="@+id/w_art"
-                  android:layout_width="88dp"
-                  android:layout_height="88dp"
+                  android:layout_width="44dp"
+                  android:layout_height="44dp"
                   android:background="@drawable/widget_art_bg"
                   android:contentDescription="Album art"
                   android:scaleType="centerCrop"
@@ -464,7 +468,7 @@ jobs:
               <LinearLayout
                   android:layout_width="0dp"
                   android:layout_height="wrap_content"
-                  android:layout_marginStart="14dp"
+                  android:layout_marginStart="10dp"
                   android:layout_weight="1"
                   android:orientation="vertical">
 
@@ -476,7 +480,7 @@ jobs:
                       android:maxLines="1"
                       android:text="Feynos Music"
                       android:textColor="#FFFFFFFF"
-                      android:textSize="16sp"
+                      android:textSize="14sp"
                       android:textStyle="bold" />
 
                   <TextView
@@ -485,44 +489,42 @@ jobs:
                       android:layout_height="wrap_content"
                       android:ellipsize="end"
                       android:maxLines="1"
-                      android:text="Tap to start listening"
+                      android:text="Tap play to start"
                       android:textColor="#B3FFFFFF"
-                      android:textSize="13sp" />
-
-                  <LinearLayout
-                      android:layout_width="match_parent"
-                      android:layout_height="wrap_content"
-                      android:layout_marginTop="8dp"
-                      android:gravity="center_vertical"
-                      android:orientation="horizontal">
-
-                      <ImageButton
-                          android:id="@+id/w_prev"
-                          android:layout_width="44dp"
-                          android:layout_height="44dp"
-                          android:background="@android:color/transparent"
-                          android:contentDescription="Previous"
-                          android:src="@drawable/ic_w_prev" />
-
-                      <ImageButton
-                          android:id="@+id/w_play"
-                          android:layout_width="48dp"
-                          android:layout_height="48dp"
-                          android:layout_marginStart="12dp"
-                          android:layout_marginEnd="12dp"
-                          android:background="@drawable/widget_play_bg"
-                          android:contentDescription="Play or pause"
-                          android:src="@drawable/ic_w_play" />
-
-                      <ImageButton
-                          android:id="@+id/w_next"
-                          android:layout_width="44dp"
-                          android:layout_height="44dp"
-                          android:background="@android:color/transparent"
-                          android:contentDescription="Next"
-                          android:src="@drawable/ic_w_next" />
-                  </LinearLayout>
+                      android:textSize="12sp" />
               </LinearLayout>
+
+              <ImageButton
+                  android:id="@+id/w_prev"
+                  android:layout_width="36dp"
+                  android:layout_height="36dp"
+                  android:background="@android:color/transparent"
+                  android:contentDescription="Previous"
+                  android:padding="6dp"
+                  android:scaleType="fitCenter"
+                  android:src="@drawable/ic_w_prev" />
+
+              <ImageButton
+                  android:id="@+id/w_play"
+                  android:layout_width="38dp"
+                  android:layout_height="38dp"
+                  android:layout_marginStart="2dp"
+                  android:layout_marginEnd="2dp"
+                  android:background="@drawable/widget_play_bg"
+                  android:contentDescription="Play or pause"
+                  android:padding="8dp"
+                  android:scaleType="fitCenter"
+                  android:src="@drawable/ic_w_play" />
+
+              <ImageButton
+                  android:id="@+id/w_next"
+                  android:layout_width="36dp"
+                  android:layout_height="36dp"
+                  android:background="@android:color/transparent"
+                  android:contentDescription="Next"
+                  android:padding="6dp"
+                  android:scaleType="fitCenter"
+                  android:src="@drawable/ic_w_next" />
           </LinearLayout>
           FEYNOS_EOF_019
           cat > 'app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml' <<'FEYNOS_EOF_020'
@@ -592,13 +594,13 @@ jobs:
               android:description="@string/widget_description"
               android:initialLayout="@layout/widget_player"
               android:minWidth="250dp"
-              android:minHeight="110dp"
-              android:minResizeWidth="220dp"
-              android:minResizeHeight="100dp"
+              android:minHeight="40dp"
+              android:minResizeWidth="180dp"
+              android:minResizeHeight="40dp"
               android:previewLayout="@layout/widget_player"
               android:resizeMode="horizontal|vertical"
               android:targetCellWidth="4"
-              android:targetCellHeight="2"
+              android:targetCellHeight="1"
               android:updatePeriodMillis="0"
               android:widgetCategory="home_screen" />
           FEYNOS_EOF_028
