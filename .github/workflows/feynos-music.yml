@@ -634,6 +634,7 @@ jobs:
           import kotlinx.coroutines.Job
           import kotlinx.coroutines.delay
           import kotlinx.coroutines.ensureActive
+          import kotlinx.coroutines.channels.Channel
           import kotlinx.coroutines.flow.MutableStateFlow
           import kotlinx.coroutines.flow.update
           import kotlinx.coroutines.launch
@@ -644,6 +645,7 @@ jobs:
           import okhttp3.Request
           import java.io.File
           import java.io.IOException
+          import java.util.concurrent.ConcurrentHashMap
 
           data class CoverCandidate(val url: String, val thumb: String, val source: String, val title: String, val artist: String)
 
@@ -687,6 +689,43 @@ jobs:
                   overrides.value = g.db.coverOverrides()
               }
 
+              // ---------- on-demand lookups ----------
+              // When a cover fails to load anywhere in the app, that album is looked up right away
+              // instead of waiting for the weekly scan.
+              private val queue = Channel<String>(Channel.UNLIMITED)
+              private val asked = ConcurrentHashMap<String, Long>()
+              private var worker: Job? = null
+
+              fun requestLookup(albumId: String?) {
+                  if (albumId.isNullOrBlank() || overrides.value.containsKey(albumId)) return
+                  if (!g.settings.current.autoCovers) return
+                  val now = System.currentTimeMillis()
+                  val last = asked[albumId]
+                  if (last != null && now - last < RETRY_MS) return
+                  asked[albumId] = now
+                  if (worker?.isActive != true) worker = g.scope.launch(Dispatchers.IO) { for (id in queue) lookupOne(id) }
+                  queue.trySend(albumId)
+              }
+
+              private suspend fun lookupOne(albumId: String) {
+                  try {
+                      val now = System.currentTimeMillis()
+                      val old = g.db.coverRows().firstOrNull { it.albumId == albumId }
+                      if (old?.url != null) return
+                      if (old != null && old.missing && now - old.checkedAt < RETRY_MS) return
+                      val album = g.api.album(albumId)
+                      val best = bestMatch(album.artist.orEmpty(), album.name)
+                      g.db.upsertCover(
+                          CoverRow(albumId, album.name, album.artist.orEmpty(), album.coverArt, old?.hash ?: "none", true, best?.url, best?.source, now),
+                      )
+                      if (best != null) load()
+                  } catch (e: CancellationException) {
+                      throw e
+                  } catch (e: Exception) {
+                      // offline or server error: try again next time the cover is shown after the retry window
+                  }
+              }
+
               fun urlFor(albumId: String?): String? = albumId?.let { overrides.value[it] }
 
               // ---------- networking ----------
@@ -710,7 +749,12 @@ jobs:
                   if (url == null) return@withContext null
                   runCatching {
                       g.http.newCall(Request.Builder().url(url).build()).execute().use { r ->
-                          if (!r.isSuccessful) null else r.body?.bytes()?.let { b -> md5(String(b, Charsets.ISO_8859_1)) }
+                          if (!r.isSuccessful) return@use null
+                          val b = r.body?.bytes() ?: return@use null
+                          // An image the phone can't decode shows as a blank square, so treat it as missing.
+                          val o = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                          android.graphics.BitmapFactory.decodeByteArray(b, 0, b.size, o)
+                          if (o.outWidth <= 0 || o.outHeight <= 0) null else md5(String(b, Charsets.ISO_8859_1))
                       }
                   }.getOrNull()
               }
@@ -718,9 +762,17 @@ jobs:
               private fun enc(s: String) = android.net.Uri.encode(s)
               private fun q(s: String) = s.replace("\"", "")
 
+              /** "For All The Dogs (Explicit) [Deluxe Edition] - Remastered" -> "For All The Dogs" */
+              private fun simplify(album: String): String = g.matcher.cleanTitle(album)
+                  .replace(Regex("""\s+[-–:]\s+.*$"""), "")
+                  .replace(NOISE, " ")
+                  .replace(Regex("""\s+"""), " ")
+                  .trim()
+                  .ifBlank { album }
+
               private fun similar(a: String, b: String): Boolean {
-                  val x = g.matcher.norm(a)
-                  val y = g.matcher.norm(b)
+                  val x = g.matcher.norm(a).replace(NOISE, " ").replace(Regex("""\s+"""), " ").trim()
+                  val y = g.matcher.norm(b).replace(NOISE, " ").replace(Regex("""\s+"""), " ").trim()
                   if (x.isEmpty() || y.isEmpty()) return false
                   return x == y || (x.length >= 3 && y.contains(x)) || (y.length >= 3 && x.contains(y))
               }
@@ -733,6 +785,14 @@ jobs:
                       CoverCandidate(big, it["cover_medium"].str ?: big, "Deezer", it["title"].str.orEmpty(), it["artist"]["name"].str.orEmpty())
                   }
               }
+
+              /** Plain keyword search: forgives punctuation and small spelling differences. */
+              private suspend fun fromDeezerLoose(artist: String, album: String): List<CoverCandidate> =
+                  json("https://api.deezer.com/search/album?limit=10&q=${enc("$artist $album".trim())}")["data"].list().mapNotNull {
+                      val big = it["cover_xl"].str ?: it["cover_big"].str ?: return@mapNotNull null
+                      if (big.contains("/images/cover//")) return@mapNotNull null
+                      CoverCandidate(big, it["cover_medium"].str ?: big, "Deezer", it["title"].str.orEmpty(), it["artist"]["name"].str.orEmpty())
+                  }
 
               private suspend fun fromItunes(artist: String, album: String): List<CoverCandidate> =
                   json("https://itunes.apple.com/search?entity=album&limit=6&term=${enc("$artist $album".trim())}")["results"].list().mapNotNull {
@@ -777,9 +837,14 @@ jobs:
               /** The best automatic match, only accepted when the album and artist names agree. */
               suspend fun bestMatch(artist: String, album: String): CoverCandidate? {
                   fun ok(c: CoverCandidate) = similar(c.title, album) && (artist.isBlank() || c.artist.isBlank() || similar(c.artist, artist))
-                  safe { fromDeezer(artist, album) }.firstOrNull { ok(it) }?.let { return it }
-                  for (c in safe { fromMusicBrainz(artist, album) }.filter { ok(it) }) if (exists(c.thumb)) return c
-                  return safe { fromItunes(artist, album) }.firstOrNull { ok(it) }
+                  val simple = simplify(album)
+                  val names = listOf(album, simple).distinct()
+                  for (n in names) safe { fromDeezer(artist, n) }.firstOrNull { ok(it) }?.let { return it }
+                  for (n in names) safe { fromDeezerLoose(artist, n) }.firstOrNull { ok(it) }?.let { return it }
+                  for (n in names) safe { fromItunes(artist, n) }.firstOrNull { ok(it) }?.let { return it }
+                  for (c in safe { fromMusicBrainz(artist, simple) }.filter { ok(it) }) if (exists(c.thumb)) return c
+                  // Last try: album name only, but the artist must still agree.
+                  return safe { fromDeezer("", simple) }.firstOrNull { ok(it) && artist.isNotBlank() && similar(it.artist, artist) }
               }
 
               // ---------- choosing art ----------
@@ -899,7 +964,7 @@ jobs:
                       for ((i, row) in missing.withIndex()) {
                           ensureActive()
                           scan.update { it.copy(done = i) }
-                          val recentlyFailed = row.missing && row.url == null && now - row.checkedAt < 30L * 86_400_000L
+                          val recentlyFailed = row.missing && row.url == null && now - row.checkedAt < RETRY_MS
                           if (!full && (row.url != null || recentlyFailed)) continue
                           val best = bestMatch(row.artist, row.name)
                           g.db.upsertCover(row.copy(missing = true, url = best?.url ?: row.url, source = if (best != null) best.source else row.source, checkedAt = now))
@@ -915,6 +980,11 @@ jobs:
                   } finally {
                       scan.update { it.copy(running = false, phase = "") }
                   }
+              }
+
+              private companion object {
+                  const val RETRY_MS = 86_400_000L // retry albums with no match once a day
+                  val NOISE = Regex("""\b(deluxe|expanded|explicit|clean|remaster(ed)?|anniversary|special|super|edition|version|bonus|tracks?|reissue|complete)\b""", RegexOption.IGNORE_CASE)
               }
           }
           FEYNOS_EOF_029
@@ -4374,6 +4444,7 @@ jobs:
           import androidx.compose.ui.unit.*
           import androidx.lifecycle.compose.collectAsStateWithLifecycle
           import androidx.navigation.NavHostController
+          import androidx.compose.runtime.LaunchedEffect
           import coil.compose.AsyncImage
           import coil.request.ImageRequest
           import com.feynos.music.App
@@ -4466,7 +4537,12 @@ jobs:
                               .memoryCacheKey(cacheKey).diskCacheKey(cacheKey)
                               .crossfade(true).build()
                       }
-                      AsyncImage(model = request, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                      AsyncImage(
+                          model = request, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize(),
+                          onError = { if (override == null) graph.covers.requestLookup(albumId ?: albumIdFromCover(id)) },
+                      )
+                  } else if (albumId != null) {
+                      LaunchedEffect(albumId) { graph.covers.requestLookup(albumId) }
                   }
               }
           }
