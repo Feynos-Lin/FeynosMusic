@@ -38,8 +38,18 @@ const ICON = {
 const PLACEHOLDER = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect width="24" height="24" fill="#26262f"/><path transform="translate(4 4) scale(.66)" fill="#55555f" d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>');
 
 function img(coverArt, albumId, size, cls = 'art') {
-  const src = artUrl(coverArt, albumId, size) || PLACEHOLDER;
-  return `<img class="${cls}" src="${esc(src)}" loading="lazy" onerror="this.onerror=null;this.src='${PLACEHOLDER}'" alt="">`;
+  const aid = albumId || albumIdFromCover(coverArt);
+  const src = artUrl(coverArt, albumId, size);
+  if (!src && aid) setTimeout(() => Covers.requestLookup(aid), 0);
+  return `<img class="${cls}" src="${esc(src || PLACEHOLDER)}" loading="lazy" ${aid ? `data-album="${esc(aid)}"` : ''} onerror="coverFailed(this)" alt="">`;
+}
+
+/** The server's image didn't load: show the placeholder and look the album up online. */
+function coverFailed(el) {
+  el.onerror = null;
+  el.src = PLACEHOLDER;
+  const aid = el.dataset.album;
+  if (aid && !Store.coverOverride(aid)) Covers.requestLookup(aid);
 }
 
 const UI = {

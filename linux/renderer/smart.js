@@ -234,12 +234,81 @@ const Covers = {
   async candidates(artist, album) {
     return [...(await this.musicBrainz(artist, album)), ...(await this.deezer(artist, album)), ...(await this.itunes(artist, album))];
   },
+  // Words that differ between your tags and the stores: "(Explicit)", "Deluxe Edition", "Remastered"...
+  NOISE: /\b(deluxe|expanded|explicit|clean|remaster(ed)?|anniversary|special|super|edition|version|bonus|tracks?|reissue|complete)\b/gi,
+  RETRY_MS: 86400000, // albums with no match are tried again after a day
+
+  /** "For All The Dogs (Explicit) [Deluxe Edition] - Remastered" -> "For All The Dogs" */
+  simplify(album) {
+    const a = cleanTitle(album).replace(/\s+[-–:]\s+.*$/, '').replace(this.NOISE, ' ').replace(/\s+/g, ' ').trim();
+    return a || album;
+  },
+  coverNorm(s) {
+    return norm(s).replace(this.NOISE, ' ').replace(/\s+/g, ' ').trim();
+  },
+  sameName(a, b) {
+    const x = this.coverNorm(a), y = this.coverNorm(b);
+    if (!x || !y) return false;
+    return x === y || (x.length >= 3 && y.includes(x)) || (y.length >= 3 && x.includes(y));
+  },
+
+  /** Plain keyword search: forgives punctuation and small spelling differences. */
+  async deezerLoose(artist, album) {
+    const r = await this.json(`https://api.deezer.com/search/album?limit=10&q=${encodeURIComponent(`${artist} ${album}`.trim())}`);
+    return ((r && r.data) || []).filter((d) => (d.cover_xl || d.cover_big) && !String(d.cover_xl).includes('/images/cover//'))
+      .map((d) => ({ url: d.cover_xl || d.cover_big, thumb: d.cover_medium || d.cover_xl, source: 'Deezer', title: d.title || '', artist: (d.artist && d.artist.name) || '' }));
+  },
+
   async bestMatch(artist, album) {
-    const ok = (c) => similar(c.title, album) && (!artist || !c.artist || similar(c.artist, artist));
-    const d = (await this.deezer(artist, album)).find(ok);
-    if (d) return d;
-    for (const c of (await this.musicBrainz(artist, album)).filter(ok)) if (await this.exists(c.thumb)) return c;
-    return (await this.itunes(artist, album)).find(ok) || null;
+    const ok = (c) => this.sameName(c.title, album) && (!artist || !c.artist || this.sameName(c.artist, artist));
+    const simple = this.simplify(album);
+    const names = [...new Set([album, simple])];
+    for (const n of names) { const d = (await this.deezer(artist, n)).find(ok); if (d) return d; }
+    for (const n of names) { const d = (await this.deezerLoose(artist, n)).find(ok); if (d) return d; }
+    for (const n of names) { const d = (await this.itunes(artist, n)).find(ok); if (d) return d; }
+    for (const c of (await this.musicBrainz(artist, simple)).filter(ok)) if (await this.exists(c.thumb)) return c;
+    // Last try: album name only, but the artist must still agree.
+    if (!artist) return null;
+    return (await this.deezer('', simple)).find((c) => ok(c) && this.sameName(c.artist, artist)) || null;
+  },
+
+  // ---- On-demand lookups: a cover that fails to load is looked up right away. ----
+  asked: new Map(),
+  queue: [],
+  working: false,
+
+  requestLookup(albumId) {
+    if (!albumId || !Settings.autoCovers || Store.coverOverride(albumId)) return;
+    const last = this.asked.get(albumId);
+    if (last && Date.now() - last < this.RETRY_MS) return;
+    this.asked.set(albumId, Date.now());
+    this.queue.push(albumId);
+    if (!this.working) this.work();
+  },
+
+  async work() {
+    this.working = true;
+    while (this.queue.length) {
+      const id = this.queue.shift();
+      try {
+        await this.lookupOne(id);
+      } catch (e) { /* offline or server error: try again after the retry window */ }
+    }
+    this.working = false;
+  },
+
+  async lookupOne(id) {
+    const now = Date.now();
+    const old = Store.covers[id];
+    if (old && (old.url || (old.missing && now - (old.checkedAt || 0) < this.RETRY_MS))) return;
+    const album = await API.album(id);
+    const best = await this.bestMatch(album.artist || '', album.name);
+    Store.setCover(id, { name: album.name, artist: album.artist || '', coverArt: album.coverArt, hash: (old && old.hash) || 'none', missing: true, checkedAt: now, url: best ? best.url : null, source: best ? best.source : null });
+    if (best) {
+      // Swap the new art into any covers of this album already on screen.
+      document.querySelectorAll(`img[data-album="${CSS.escape(id)}"]`).forEach((el) => { el.src = best.url; });
+      UI.refresh();
+    }
   },
   set(album, url, source) {
     Store.setCover(album.id, { name: album.name, artist: album.artist || '', coverArt: album.coverArt, url, source, checkedAt: Date.now() });
@@ -250,7 +319,14 @@ const Covers = {
     try {
       const res = await fetch(url);
       if (!res.ok) return null;
-      const buf = await crypto.subtle.digest('SHA-1', await res.arrayBuffer());
+      const data = await res.arrayBuffer();
+      // An image that can't be decoded shows as a blank square, so treat it as missing.
+      try {
+        (await createImageBitmap(new Blob([data]))).close();
+      } catch (e) {
+        return null;
+      }
+      const buf = await crypto.subtle.digest('SHA-1', data);
       return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
     } catch (e) {
       return null;
@@ -311,7 +387,7 @@ const Covers = {
         if (this.cancelled) break;
         this.done = i + 1;
         UI.refresh();
-        const recentlyFailed = e.missing && !e.url && now - (e.checkedAt || 0) < 30 * 86400000;
+        const recentlyFailed = e.missing && !e.url && now - (e.checkedAt || 0) < this.RETRY_MS;
         if (!full && (e.url || recentlyFailed)) continue;
         const best = await this.bestMatch(e.artist, e.name);
         e.missing = true;
