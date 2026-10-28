@@ -103,7 +103,7 @@ struct SearchView: View {
                     if query.trimmingCharacters(in: .whitespaces).isEmpty {
                         if !genres.isEmpty {
                             Text("Browse genres").font(.title3).bold()
-                            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 40), count: 4), spacing: 40) {
+                            LazyVGrid(columns: cardColumns(340), spacing: 50) {
                                 ForEach(genres, id: \.self) { g in
                                     let name = g.value ?? ""
                                     NavigationLink(value: Route.genre(name)) {
@@ -199,7 +199,7 @@ struct ForYouView: View {
                             mixes.generating ? "Making your mixes…" : "No mixes yet", systemImage: "sparkles",
                             description: Text("Mixes are built from what you play, your Navidrome library and ListenBrainz. Play some music, then press Refresh."))
                     } else {
-                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 40), count: 5), spacing: 40) {
+                        LazyVGrid(columns: cardColumns(304), spacing: 50) {
                             ForEach(store.mixes) { MixCard(mix: $0) }
                         }
                     }
@@ -340,7 +340,7 @@ struct PlaylistsGrid: View {
     var body: some View {
         Loader(id: store.version, load: { try await Subsonic.shared.playlists() }) { list in
             ScrollView {
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 40), count: 5), spacing: 40) {
+                LazyVGrid(columns: cardColumns(260), spacing: 50) {
                     NavigationLink(value: Route.liked) {
                         VStack(alignment: .leading, spacing: 8) {
                             ZStack {
@@ -376,7 +376,7 @@ struct ArtistsGrid: View {
     var body: some View {
         Loader(id: "artists", load: { try await Subsonic.shared.artists().sorted { $0.title.lowercased() < $1.title.lowercased() } }) { list in
             ScrollView {
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 30), count: 6), spacing: 40) {
+                LazyVGrid(columns: cardColumns(264), spacing: 50) {
                     ForEach(list) { ArtistCard(artist: $0) }
                 }
                 .padding(40)
@@ -396,7 +396,7 @@ struct AlbumGridView: View {
     var body: some View {
         ScrollView {
             if let title { Text(title).font(.largeTitle).bold().frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 40) }
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 30), count: 5), spacing: 40) {
+            LazyVGrid(columns: cardColumns(284), spacing: 50) {
                 ForEach(albums) { a in
                     AlbumCard(album: a, width: 260)
                         .onAppear { if a.id == albums.last?.id { Task { await loadMore() } } }

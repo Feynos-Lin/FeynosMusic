@@ -1,3 +1,4 @@
+import UIKit
 import Foundation
 
 // MARK: - Matching ListenBrainz tracks to your library
@@ -173,6 +174,70 @@ final class Covers: ObservableObject {
     @Published private(set) var found = 0
     private var cancelled = false
     private var lastMbCall = Date.distantPast
+    /// Albums with no match online are tried again after a day.
+    private static let retry: TimeInterval = 86400
+    private static let noise = "\\b(deluxe|expanded|explicit|clean|remaster(ed)?|anniversary|special|super|edition|version|bonus|tracks?|reissue|complete)\\b"
+
+    // MARK: On-demand lookups
+    // When a cover fails to load anywhere in the app, that album is looked up right away
+    // instead of waiting for the weekly scan.
+    private var asked: [String: Date] = [:]
+    private var pending: [String] = []
+    private var working = false
+
+    func requestLookup(_ albumId: String?) {
+        guard let id = albumId, !id.isEmpty, AppSettings.shared.autoCovers, Store.shared.coverOverride(id) == nil else { return }
+        if let t = asked[id], Date().timeIntervalSince(t) < Self.retry { return }
+        asked[id] = Date()
+        pending.append(id)
+        guard !working else { return }
+        working = true
+        Task {
+            while !pending.isEmpty {
+                let next = pending.removeFirst()
+                await lookupOne(next)
+            }
+            working = false
+        }
+    }
+
+    private func lookupOne(_ id: String) async {
+        let now = Date()
+        if let e = Store.shared.covers[id], e.url != nil || (e.missing && now.timeIntervalSince(e.checkedAt) < Self.retry) { return }
+        guard let album = try? await Subsonic.shared.album(id) else { return }
+        let best = await bestMatch(artist: album.artist ?? "", album: album.title)
+        var e = Store.shared.covers[id] ?? CoverEntry(albumId: id, name: album.title, artist: album.artist ?? "", coverArt: album.coverArt,
+                                                     hash: "none", missing: true, url: nil, source: nil, checkedAt: now)
+        e.missing = true
+        e.checkedAt = now
+        if let best {
+            e.url = best.url
+            e.source = best.source
+        }
+        Store.shared.setCover(e)
+    }
+
+    /// "For All The Dogs (Explicit) [Deluxe Edition] - Remastered" -> "For All The Dogs"
+    private func simplify(_ album: String) -> String {
+        let a = cleanTitle(album)
+            .replacingOccurrences(of: "\\s+[-–:]\\s+.*$", with: "", options: .regularExpression)
+            .replacingOccurrences(of: Self.noise, with: " ", options: [.regularExpression, .caseInsensitive])
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespaces)
+        return a.isEmpty ? album : a
+    }
+
+    private func coverNorm(_ s: String) -> String {
+        norm(s).replacingOccurrences(of: Self.noise, with: " ", options: [.regularExpression, .caseInsensitive])
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespaces)
+    }
+
+    private func sameName(_ a: String, _ b: String) -> Bool {
+        let x = coverNorm(a), y = coverNorm(b)
+        if x.isEmpty || y.isEmpty { return false }
+        return x == y || (x.count >= 3 && y.contains(x)) || (y.count >= 3 && x.contains(y))
+    }
 
     /// Cover image URL, preferring art the finder picked.
     func artURL(_ coverArt: String?, albumId: String?, size: Int) -> URL? {
@@ -195,6 +260,16 @@ final class Covers: ObservableObject {
     private func deezer(_ artist: String, _ album: String) async -> [CoverCandidate] {
         let query = artist.isEmpty ? "album:\"\(q(album))\"" : "artist:\"\(q(artist))\" album:\"\(q(album))\""
         let r = await json("https://api.deezer.com/search/album?limit=6&q=\(query.queryEncoded)")
+        return (r?["data"] as? [[String: Any]] ?? []).compactMap { d in
+            guard let big = d["cover_xl"] as? String ?? d["cover_big"] as? String, !big.contains("/images/cover//") else { return nil }
+            return CoverCandidate(url: big, thumb: d["cover_medium"] as? String ?? big, source: "Deezer",
+                                  title: d["title"] as? String ?? "", artist: (d["artist"] as? [String: Any])?["name"] as? String ?? "")
+        }
+    }
+
+    /// Plain keyword search: forgives punctuation and small spelling differences.
+    private func deezerLoose(_ artist: String, _ album: String) async -> [CoverCandidate] {
+        let r = await json("https://api.deezer.com/search/album?limit=10&q=\("\(artist) \(album)".trimmingCharacters(in: .whitespaces).queryEncoded)")
         return (r?["data"] as? [[String: Any]] ?? []).compactMap { d in
             guard let big = d["cover_xl"] as? String ?? d["cover_big"] as? String, !big.contains("/images/cover//") else { return nil }
             return CoverCandidate(url: big, thumb: d["cover_medium"] as? String ?? big, source: "Deezer",
@@ -240,12 +315,18 @@ final class Covers: ObservableObject {
     }
 
     func bestMatch(artist: String, album: String) async -> CoverCandidate? {
-        func ok(_ c: CoverCandidate) -> Bool { similar(c.title, album) && (artist.isEmpty || c.artist.isEmpty || similar(c.artist, artist)) }
-        if let d = await deezer(artist, album).first(where: ok) { return d }
-        for c in await musicBrainz(artist, album).filter(ok) {
+        func ok(_ c: CoverCandidate) -> Bool { sameName(c.title, album) && (artist.isEmpty || c.artist.isEmpty || sameName(c.artist, artist)) }
+        let simple = simplify(album)
+        let names = simple == album ? [album] : [album, simple]
+        for n in names { if let d = await deezer(artist, n).first(where: ok) { return d } }
+        for n in names { if let d = await deezerLoose(artist, n).first(where: ok) { return d } }
+        for n in names { if let d = await itunes(artist, n).first(where: ok) { return d } }
+        for c in await musicBrainz(artist, simple).filter(ok) {
             if await exists(c.thumb) { return c }
         }
-        return await itunes(artist, album).first(where: ok)
+        // Last try: album name only, but the artist must still agree.
+        guard !artist.isEmpty else { return nil }
+        return await deezer("", simple).first { ok($0) && sameName($0.artist, artist) }
     }
 
     func set(_ album: Album, url: String?, source: String?) {
@@ -259,6 +340,8 @@ final class Covers: ObservableObject {
     private func hashOf(_ url: URL?) async -> String? {
         guard let url, let result = try? await URLSession.shared.data(from: url),
               ((result.1 as? HTTPURLResponse)?.statusCode ?? 0) < 300 else { return nil }
+        // An image the TV can't decode shows as a blank square, so treat it as missing.
+        guard UIImage(data: result.0) != nil else { return nil }
         return md5(result.0)
     }
 
@@ -318,7 +401,7 @@ final class Covers: ObservableObject {
         for (i, var e) in missing.enumerated() {
             if cancelled { break }
             done = i + 1
-            let recentlyFailed = e.missing && e.url == nil && now.timeIntervalSince(e.checkedAt) < 30 * 86400
+            let recentlyFailed = e.missing && e.url == nil && now.timeIntervalSince(e.checkedAt) < Self.retry
             if !full && (e.url != nil || recentlyFailed) { continue }
             let best = await bestMatch(artist: e.artist, album: e.name)
             e.missing = true

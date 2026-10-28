@@ -92,20 +92,42 @@ struct CoverImage: View {
         Color.clear
             .aspectRatio(1, contentMode: .fit)
             .overlay {
-                AsyncImage(url: url) { phase in
-                    if let image = phase.image {
-                        image.resizable().scaledToFill()
-                    } else {
-                        ZStack {
-                            Color.white.opacity(0.08)
-                            Image(systemName: placeholder).font(.system(size: 50)).foregroundStyle(.secondary)
+                if let url {
+                    AsyncImage(url: url) { phase in
+                        if let image = phase.image {
+                            image.resizable().scaledToFill()
+                        } else if case .failure = phase {
+                            blank.onAppear { lookupIfMissing() }
+                        } else {
+                            blank
                         }
                     }
+                    .id(url)
+                } else {
+                    blank.onAppear { lookupIfMissing() }
                 }
-                .id(url)
             }
             .clipShape(RoundedRectangle(cornerRadius: corner))
     }
+
+    private var blank: some View {
+        ZStack {
+            Color.white.opacity(0.08)
+            Image(systemName: placeholder).font(.system(size: 50)).foregroundStyle(.secondary)
+        }
+    }
+
+    /// The server image is missing or broken: look the album up online.
+    private func lookupIfMissing() {
+        let id = albumId ?? albumIdFromCover(coverArt)
+        if Store.shared.coverOverride(id) == nil { Covers.shared.requestLookup(id) }
+    }
+}
+
+/// Grid columns sized for fixed-width cards, with enough gap that a focused (enlarged) card
+/// never overlaps its neighbours, however wide the screen is.
+func cardColumns(_ width: CGFloat) -> [GridItem] {
+    [GridItem(.adaptive(minimum: width, maximum: width + 60), spacing: 50, alignment: .top)]
 }
 
 /// A row of focusable items that scrolls sideways (like the Apple TV app shelves).

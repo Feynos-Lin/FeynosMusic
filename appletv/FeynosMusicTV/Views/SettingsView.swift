@@ -172,7 +172,7 @@ struct CoverArtView: View {
     }
 
     private func coverGrid(_ list: [CoverEntry]) -> some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 30), count: 6), spacing: 30) {
+        LazyVGrid(columns: cardColumns(220), spacing: 50) {
             ForEach(list, id: \.albumId) { e in
                 NavigationLink(value: Route.album(e.albumId)) {
                     VStack(alignment: .leading, spacing: 6) {
@@ -201,7 +201,7 @@ struct CoverPickerSheet: View {
                 Text("Cover art for \(album.title)").font(.title2).bold()
                 if let candidates {
                     if candidates.isEmpty { Text("No artwork found online for this album.").foregroundStyle(.secondary) }
-                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 30), count: 5), spacing: 30) {
+                    LazyVGrid(columns: cardColumns(260), spacing: 50) {
                         ForEach(candidates) { c in
                             Button {
                                 Covers.shared.set(album, url: c.url, source: "manual")
