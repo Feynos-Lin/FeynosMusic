@@ -92,12 +92,17 @@ const UI = {
       app.innerHTML = this.loginView();
       return;
     }
-    const navs = [
-      ['home', 'Home', ICON.home], ['search', 'Search', ICON.search], ['foryou', 'For You', ICON.sparkles],
-      ['library', 'Your Library', ICON.library], ['liked', 'Liked Songs', ICON.heart],
-    ];
+    const layout = Settings.layout || 'feynos';
+    document.body.className = 'layout-' + layout;
+    const navs = {
+      feynos: [['home', 'Home', ICON.home], ['search', 'Search', ICON.search], ['foryou', 'For You', ICON.sparkles], ['library', 'Your Library', ICON.library], ['liked', 'Liked Songs', ICON.heart]],
+      spotify: [['home', 'Home', ICON.home], ['search', 'Search', ICON.search], ['library', 'Your Library', ICON.library], ['liked', 'Liked Songs', ICON.heart]],
+      apple: [['home', 'Listen Now', ICON.play], ['foryou', 'Browse', ICON.sparkles], ['search', 'Search', ICON.search], ['library', 'Library', ICON.library], ['liked', 'Songs I Like', ICON.heart]],
+      youtube: [['home', 'Home', ICON.home], ['foryou', 'Explore', ICON.sparkles], ['library', 'Library', ICON.library], ['liked', 'Liked', ICON.heart]],
+    }[layout] || [];
     const navs2 = [['history', 'History', ICON.history], ['stats', 'Stats', ICON.chart], ['jam', 'Jam', ICON.jam], ['settings', 'Settings', ICON.settings]];
     app.innerHTML = `
+      ${layout === 'youtube' ? `<header class="yt-top"><div class="logo"><div class="mark">${ICON.play}</div>Music</div><input id="ytsearch" class="search" placeholder="Search songs, albums, artists"></header>` : ''}
       <aside class="side">
         <div class="logo"><div class="mark">${ICON.note}</div>Feynos Music</div>
         ${navs.map(([r, l, i]) => `<div class="nav" data-act="nav" data-route="${r}">${i}${l}</div>`).join('')}
@@ -194,7 +199,7 @@ const UI = {
 
   markCurrent() {
     const cur = Player.current();
-    document.querySelectorAll('.song').forEach((r) => r.classList.toggle('cur', !!cur && r.dataset.id === cur.id));
+    document.querySelectorAll('.song, .pick').forEach((r) => r.classList.toggle('cur', !!cur && r.dataset.id === cur.id));
   },
 
   albumCard(a) {
@@ -248,10 +253,40 @@ const UI = {
     const jump = Store.recentSongs(20);
     const jumpKey = this.reg(jump);
     const shelf = (title, list, type) => list.length ? `<h2>${esc(title)}<span class="see" data-act="go-albums" data-type="${type}" data-title="${esc(title)}">See all</span></h2><div class="row">${list.map((a) => this.albumCard(a)).join('')}</div>` : '';
-    return `<h1>${greet}</h1><div class="quick">${quick.join('')}</div>
+    const layout = Settings.layout || 'feynos';
+    if (layout === 'apple') return this.appleHome({ recent, newest, frequent, starred, random, jump, jumpKey, shelf });
+    if (layout === 'youtube') return this.youtubeHome({ recent, newest, frequent, starred, random, jump, jumpKey, shelf });
+    const chips = layout === 'spotify' ? `<div class="chips"><div class="chip on">Music</div><div class="chip" data-act="nav" data-route="foryou">Made for you</div><div class="chip" data-act="nav" data-route="liked">Liked</div><div class="chip" data-act="nav" data-route="history">Recently played</div><div class="chip" data-act="nav" data-route="stats">Stats</div></div>` : '';
+    return `<h1>${greet}</h1>${chips}<div class="quick">${quick.join('')}</div>
       ${Store.mixes.length ? `<h2>Made for you<span class="see" data-act="nav" data-route="foryou">See all</span></h2><div class="row">${Store.mixes.map((m) => this.mixCard(m)).join('')}</div>` : ''}
       ${jump.length ? `<h2>Jump back in<span class="see" data-act="nav" data-route="history">See all</span></h2><div class="row">${jump.map((s, i) => `<div class="card" data-act="play-song" data-list="${jumpKey}" data-i="${i}" data-menu="1">${img(s.coverArt, s.albumId, 300)}<div class="t">${esc(s.title)}</div><div class="s">${esc(s.artist || '')}</div></div>`).join('')}</div>` : ''}
       ${shelf('Recently played albums', recent, 'recent')}${shelf('Recently added', newest, 'newest')}${shelf('Your most played', frequent, 'frequent')}${shelf('Liked albums', starred, 'starred')}${shelf('Something different', random, 'random')}`;
+  },
+
+  /** Apple Music-style Listen Now. */
+  appleHome(d) {
+    const top = Store.mixes.map((m) => `<div class="toppick" data-act="go-mix" data-id="${esc(m.id)}"><div class="lbl">MADE FOR YOU</div><div class="tp">${this.mixArt(m)}<div class="desc">${esc(m.description)}</div></div></div>`).join('');
+    return `<h1>Listen Now</h1>
+      ${top ? `<h2>Top Picks for You<span class="see" data-act="nav" data-route="foryou">See all</span></h2><div class="row">${top}</div>` : ''}
+      ${d.jump.length ? `<h2>Recently Played<span class="see" data-act="nav" data-route="history">See all</span></h2><div class="row big">${d.jump.map((s, i) => `<div class="card" data-act="play-song" data-list="${d.jumpKey}" data-i="${i}" data-menu="1">${img(s.coverArt, s.albumId, 300)}<div class="t">${esc(s.title)}</div><div class="s">${esc(s.artist || '')}</div></div>`).join('')}</div>` : ''}
+      ${d.shelf('Recently Added', d.newest, 'newest')}${d.shelf('Heavy Rotation', d.frequent, 'frequent')}${d.shelf('Your Favorites', d.starred, 'starred')}${d.shelf('Discover', d.random, 'random')}`;
+  },
+
+  /** YouTube Music-style Home. */
+  async youtubeHome(d) {
+    const genres = (await API.genres().catch(() => [])).sort((a, b) => (b.songCount || 0) - (a.songCount || 0)).slice(0, 16);
+    const first = Store.mixes[0];
+    const picks = uniqueById([...(first ? first.songs : []), ...d.jump]).slice(0, 20);
+    const pk = this.reg(picks);
+    const again = [
+      ...d.recent.slice(0, 8).map((a) => this.albumCard(a)),
+      ...d.jump.slice(0, 12).map((s, i) => `<div class="card" data-act="play-song" data-list="${d.jumpKey}" data-i="${i}" data-menu="1">${img(s.coverArt, s.albumId, 300)}<div class="t">${esc(s.title)}</div><div class="s">${esc(s.artist || '')}</div></div>`),
+    ];
+    return `${genres.length ? `<div class="chips mood">${genres.map((g) => `<div class="chip" data-act="go-genre" data-name="${esc(g.value)}">${esc(g.value)}</div>`).join('')}</div>` : ''}
+      ${again.length ? `<h2>Listen again<span class="see" data-act="nav" data-route="history">See all</span></h2><div class="again">${again.join('')}</div>` : ''}
+      ${picks.length ? `<h2>Quick picks<span class="see" data-act="play-list" data-list="${pk}">Play all</span></h2><div class="picks">${picks.map((s, i) => `<div class="pick" data-id="${esc(s.id)}" data-act="play-song" data-list="${pk}" data-i="${i}" data-menu="1">${img(s.coverArt, s.albumId, 100, '')}<div class="tt"><div>${esc(s.title)}</div><div class="muted">${esc(s.artist || '')}</div></div></div>`).join('')}</div>` : ''}
+      ${Store.mixes.length ? `<h2>Mixed for you<span class="see" data-act="nav" data-route="foryou">See all</span></h2><div class="row">${Store.mixes.map((m) => this.mixCard(m)).join('')}</div>` : ''}
+      ${d.shelf('Albums for you', d.random, 'random')}${d.shelf('New releases', d.newest, 'newest')}${d.shelf('Your favorites', d.frequent, 'frequent')}${d.shelf('Liked albums', d.starred, 'starred')}`;
   },
 
   async view_search(p) {
@@ -484,6 +519,7 @@ const UI = {
       ${sw('syncMixes', 'Save mixes to Navidrome', 'Keep a copy of each mix as a server playlist')}
       <h2>Cover art</h2><div class="setting"><div class="l"><div>Find missing cover art</div><div class="s">Looks up art on MusicBrainz, Deezer and iTunes</div></div><button class="btn" data-act="nav" data-route="covers">Open</button></div>
       ${sw('autoCovers', 'Fix new albums automatically', 'Checks for missing art when your mixes refresh')}
+      <h2>Layout</h2>${LAYOUTS.map((l) => `<div class="setting" data-act="layout" data-id="${l.id}" style="cursor:pointer"><div class="l"><div>${esc(l.name)}</div><div class="s">${esc(l.blurb)}</div></div><div class="radio ${Settings.layout === l.id ? 'on' : ''}"></div></div>`).join('')}
       <h2>Theme</h2><div class="themes">${THEMES.map((t) => `<div class="theme ${t.id === Settings.theme ? 'on' : ''}" data-act="theme" data-id="${t.id}"><div class="sw" style="background:${t.bg}"><span style="background:${t.accent}"></span></div>${esc(t.name.split(' (')[0])}${t.name.includes('(') ? `<div class="sub">${esc(t.name.split('(')[1].replace(')', ''))}</div>` : ''}</div>`).join('')}</div>
       <h2>Updates</h2>${sw('autoUpdate', 'Check for updates on start')}
       <div class="setting"><div class="l"><div>Feynos Music for Linux ${esc(APP_VERSION)}</div></div><button class="btn" data-act="check-update">Check now</button></div></div>`;
@@ -564,6 +600,7 @@ const UI = {
       v.className = 'np-view';
       document.body.appendChild(v);
     }
+    v.classList.toggle('paused', !Player.isPlaying());
     if (!s) {
       v.innerHTML = `<button class="iconbtn np-close" data-act="np-close">${ICON.down}</button><div class="empty" style="grid-column:1/-1">Nothing playing</div>`;
       return;
@@ -582,7 +619,7 @@ const UI = {
       <div class="left"><img src="${esc(art)}" alt="" onerror="this.src='${PLACEHOLDER}'"><div class="t">${esc(s.title)}</div>
         <div class="muted">${s.artistId ? `<span class="link" data-act="go-artist" data-id="${esc(s.artistId)}">${esc(s.artist || '')}</span>` : esc(s.artist || '')}${s.album ? ` · ${s.albumId ? `<span class="link" data-act="go-album" data-id="${esc(s.albumId)}">${esc(s.album)}</span>` : esc(s.album)}` : ''}</div>
         ${Jam.role !== 'none' ? `<div style="color:var(--accent);font-weight:700">Jam · ${esc(Jam.people().join(', '))}</div>` : ''}</div>
-      <div class="right">${this.chips('npTab', [['lyrics', 'Lyrics'], ['queue', 'Up next']], this.npTab)}<div class="panel" id="nppanel">${this.npTab === 'queue' ? queueHtml : '<div class="spinner"></div>'}</div></div>`;
+      <div class="right">${this.chips('npTab', Settings.layout === 'youtube' ? [['queue', 'UP NEXT'], ['lyrics', 'LYRICS']] : [['lyrics', 'Lyrics'], ['queue', 'Up next']], this.npTab)}<div class="panel" id="nppanel">${this.npTab === 'queue' ? queueHtml : '<div class="spinner"></div>'}</div></div>`;
     this.markCurrent();
     if (this.npTab === 'lyrics') {
       if (this.lyricsFor !== s.id) {
@@ -879,6 +916,13 @@ const UI = {
         saveSettings();
         this.render();
         break;
+      case 'layout':
+        Settings.layout = d.id;
+        saveSettings();
+        this.closeNp();
+        this.shell();
+        this.render(true);
+        break;
       case 'theme':
         Settings.theme = d.id;
         saveSettings();
@@ -1002,6 +1046,10 @@ const UI = {
       }
     });
     document.addEventListener('keydown', (ev) => {
+      if (ev.target.id === 'ytsearch' && ev.key === 'Enter') {
+        this.go('search', { q: ev.target.value });
+        return;
+      }
       const typing = ev.target.matches('input, select, textarea');
       if (ev.key === 'Enter' && ev.target.id && ev.target.id.startsWith('l-')) this.act('login', ev.target, ev);
       if (typing) return;

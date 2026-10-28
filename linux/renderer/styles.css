@@ -191,3 +191,54 @@ input[type=range]:hover::-webkit-slider-thumb { opacity: 1; }
 .theme .sw span { width: 24px; height: 24px; border-radius: 50%; }
 .theme.on .sw { border: 3px solid var(--accent); }
 .theme .sub { color: var(--muted); font-size: 11px; }
+
+/* ---------- Layouts ---------- */
+.radio { width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--muted); flex: none; }
+.radio.on { border: 6px solid var(--accent); }
+
+/* Apple Music-style: player across the top, bigger cards, art shrinks when paused */
+body.layout-apple #app { grid-template-rows: 76px 1fr; grid-template-areas: "bar bar" "side main"; }
+body.layout-apple .bar { border-top: 0; border-bottom: 1px solid #ffffff12; }
+body.layout-apple .np-view { inset: 76px 0 0 0; }
+body.layout-apple .side .nav.on { color: var(--accent); }
+body.layout-apple h1 { font-size: 40px; }
+body.layout-apple .row .card { width: 210px; max-width: none; }
+body.layout-apple .row.big .card { width: 220px; max-width: none; }
+body.layout-apple .card, body.layout-apple .card .art { border-radius: 12px; }
+.toppick { width: 270px; flex: none; cursor: pointer; }
+.toppick .lbl { font-size: 11px; font-weight: 700; color: var(--muted); margin-bottom: 6px; }
+.toppick .tp { position: relative; height: 330px; border-radius: 14px; overflow: hidden; box-shadow: 0 14px 30px #0008; }
+.toppick .tp .mixart { height: 100%; border-radius: 0; }
+.toppick .desc { position: absolute; left: 0; right: 0; bottom: 0; padding: 40px 14px 14px; color: #fff; font-size: 13px; background: linear-gradient(transparent, #000c); }
+body.layout-apple .np-view .left img { transition: transform .45s cubic-bezier(.3, 1.5, .5, 1), box-shadow .45s; }
+body.layout-apple .np-view.paused .left img { transform: scale(.8); box-shadow: 0 10px 30px #0008; }
+
+/* YouTube Music-style: search bar on top, slim rail, progress line across the player */
+body.layout-youtube #app { grid-template-columns: 96px 1fr; grid-template-rows: 64px 1fr 88px; grid-template-areas: "top top" "side main" "bar bar"; }
+.yt-top { grid-area: top; display: flex; align-items: center; gap: 30px; padding: 0 20px; background: var(--side); border-bottom: 1px solid #ffffff12; }
+.yt-top .logo { padding: 0; font-size: 20px; }
+.yt-top .logo .mark { border-radius: 50%; background: var(--accent); color: var(--on-accent); }
+.yt-top .search { max-width: 520px; margin: 0; flex: 1; }
+body.layout-youtube .side { padding: 10px 4px; align-items: stretch; }
+body.layout-youtube .side .logo, body.layout-youtube .side .small, body.layout-youtube .side .sep { display: none; }
+body.layout-youtube .nav { flex-direction: column; gap: 4px; font-size: 11px; padding: 12px 2px; text-align: center; }
+body.layout-youtube .jam-pill { font-size: 10px; padding: 6px; text-align: center; }
+body.layout-youtube .bar { position: relative; grid-template-columns: 240px 1fr 260px; }
+body.layout-youtube .bar .center { order: -1; align-items: flex-start; }
+body.layout-youtube .bar .np { justify-content: center; }
+body.layout-youtube .bar .seek { position: absolute; left: 0; right: 0; top: -7px; max-width: none; }
+body.layout-youtube .bar .seek span { display: none; }
+body.layout-youtube .bar .seek input { width: 100%; }
+body.layout-youtube .chip { border-radius: 8px; }
+.chips.mood { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 6px; }
+.chips.mood .chip { white-space: nowrap; background: #ffffff1a; }
+.again { display: grid; grid-auto-flow: column; grid-template-rows: repeat(2, auto); grid-auto-columns: 170px; gap: 8px; overflow-x: auto; padding-bottom: 10px; }
+.again .card { width: auto; max-width: none; min-width: 0; }
+.picks { display: grid; grid-auto-flow: column; grid-template-rows: repeat(4, 64px); grid-auto-columns: minmax(340px, 30%); gap: 2px 16px; overflow-x: auto; padding-bottom: 10px; }
+.pick { display: flex; align-items: center; gap: 12px; padding: 6px; border-radius: 6px; cursor: pointer; min-width: 0; }
+.pick:hover { background: #ffffff0f; }
+.pick img { width: 48px; height: 48px; border-radius: 4px; object-fit: cover; flex: none; background: var(--panel3); }
+.pick .tt { min-width: 0; }
+.pick .tt div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pick.cur .tt div:first-child { color: var(--accent); }
+.toppick .mixart .bar { display: none; }

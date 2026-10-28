@@ -115,7 +115,7 @@ const Settings = Object.assign(
     scrobbleNavidrome: true, scrobbleLb: true,
     maxBitrate: 0, format: 'raw',
     syncMixes: false, autoCovers: true, autoUpdate: true,
-    lastMixGen: 0, volume: 0.9, theme: 'feynos',
+    lastMixGen: 0, volume: 0.9, theme: 'feynos', layout: 'feynos',
   },
   DB.get('settings', {}),
 );
@@ -130,6 +130,14 @@ const THEMES = [
   { id: 'tidal', name: 'Black & cyan (Tidal-style)', accent: '#33ffee', on: '#00201d', bg: '#000000', panel: '#0d0d0d', panel2: '#171717', panel3: '#242424', container: '#0b3d3a', side: '#000000' },
   { id: 'amazon', name: 'Teal (Amazon Music-style)', accent: '#25d1da', on: '#00282a', bg: '#0b0f12', panel: '#12181d', panel2: '#19212a', panel3: '#232f3e', container: '#0e3b42', side: '#05080a' },
   { id: 'deezer', name: 'Violet (Deezer-style)', accent: '#a238ff', on: '#ffffff', bg: '#0f0d13', panel: '#191622', panel2: '#201c2b', panel3: '#2a2533', container: '#3b1a66', side: '#09080c' },
+];
+
+// Layouts. The "-style" ones follow the structure of other music apps (no logos or branding).
+const LAYOUTS = [
+  { id: 'feynos', name: 'Feynos', blurb: 'Sidebar with For You, quick-pick grid on Home' },
+  { id: 'spotify', name: 'Spotify-style', blurb: 'Home, Search and Your Library, filter chips and an 8-tile quick grid' },
+  { id: 'apple', name: 'Apple Music-style', blurb: 'Player along the top, Listen Now with big Top Picks, artwork that shrinks when paused' },
+  { id: 'youtube', name: 'YouTube Music-style', blurb: 'Search bar on top, slim side rail, mood chips, Listen again and Quick picks' },
 ];
 
 function applyTheme() {
