@@ -133,9 +133,9 @@ final class AudioTap: @unchecked Sendable {
                     guard MTAudioProcessingTapGetSourceAudio(tap, frames, bufferList, flagsOut, nil, framesOut) == noErr else { return }
                     AudioTap.shared.write(UnsafeMutableAudioBufferListPointer(bufferList), frames: Int(framesOut.pointee))
                 })
-            var tap: MTAudioProcessingTap?
-            guard MTAudioProcessingTapCreate(kCFAllocatorDefault, &callbacks, kMTAudioProcessingTapCreationFlag_PostEffects, &tap) == noErr,
-                  let tap else { return }
+            var tapOut: Unmanaged<MTAudioProcessingTap>?
+            guard MTAudioProcessingTapCreate(kCFAllocatorDefault, &callbacks, kMTAudioProcessingTapCreationFlag_PostEffects, &tapOut) == noErr,
+                  let tap = tapOut?.takeRetainedValue() else { return }
             let params = AVMutableAudioMixInputParameters(track: track)
             params.audioTapProcessor = tap
             let mix = AVMutableAudioMix()
