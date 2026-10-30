@@ -1,7 +1,7 @@
 // Feynos Music for Linux: Electron main process.
 // Handles the window, opening links, and the network side of jams
 // (TCP + Bonjour "_feynosjam._tcp", compatible with the Android and Apple TV apps).
-const { app, BrowserWindow, ipcMain, shell, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, Menu, powerSaveBlocker } = require('electron');
 const path = require('path');
 const net = require('net');
 const crypto = require('crypto');
@@ -65,6 +65,17 @@ ipcMain.on('app:md5', (e, s) => {
   e.returnValue = crypto.createHash('md5').update(String(s), 'utf8').digest('hex');
 });
 ipcMain.handle('app:version', () => app.getVersion());
+
+// Keeps the screen from going to sleep while the app is open (Settings can turn this off).
+let awakeId = null;
+ipcMain.handle('app:keepAwake', (e, on) => {
+  if (on && awakeId === null) awakeId = powerSaveBlocker.start('prevent-display-sleep');
+  if (!on && awakeId !== null) {
+    powerSaveBlocker.stop(awakeId);
+    awakeId = null;
+  }
+  return awakeId !== null;
+});
 ipcMain.handle('app:open', (_e, url) => shell.openExternal(url));
 
 // ---------------- Jam networking ----------------

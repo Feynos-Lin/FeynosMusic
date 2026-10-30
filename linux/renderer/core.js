@@ -115,7 +115,7 @@ const Settings = Object.assign(
     scrobbleNavidrome: true, scrobbleLb: true,
     maxBitrate: 0, format: 'raw',
     syncMixes: false, autoCovers: true, autoUpdate: true,
-    lastMixGen: 0, volume: 0.9, theme: 'feynos', layout: 'feynos',
+    lastMixGen: 0, volume: 0.9, theme: 'feynos', layout: 'feynos', keepAwake: true, visualizer: 'off',
   },
   DB.get('settings', {}),
 );

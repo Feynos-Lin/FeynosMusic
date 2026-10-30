@@ -242,3 +242,10 @@ body.layout-youtube .chip { border-radius: 8px; }
 .pick .tt div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pick.cur .tt div:first-child { color: var(--accent); }
 .toppick .mixart .bar { display: none; }
+
+/* Visualizer */
+.np-view .left .visbox { position: relative; width: min(100%, 56vh); aspect-ratio: 1; border-radius: 14px; background: #0000004d; overflow: hidden; }
+.np-view .left .visbox canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.np-view .left .visbox .vc { position: absolute; left: 29%; top: 29%; width: 42%; height: 42%; border-radius: 50%; box-shadow: none; }
+.np-view .left .visnote { position: absolute; inset: auto 20px 20px; text-align: center; color: var(--muted); font-size: 13px; }
+.np-view .left .btn svg { width: 18px; height: 18px; vertical-align: -4px; margin-right: 4px; }

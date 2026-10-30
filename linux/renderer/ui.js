@@ -30,6 +30,7 @@ const ICON = {
   radio: svg('M7.76 16.24C6.67 15.16 6 13.66 6 12s.67-3.16 1.76-4.24l1.42 1.42C8.45 9.9 8 10.9 8 12c0 1.1.45 2.1 1.17 2.83l-1.41 1.41zm8.48 0C17.33 15.16 18 13.66 18 12s-.67-3.16-1.76-4.24l-1.42 1.42C15.55 9.9 16 10.9 16 12c0 1.1-.45 2.1-1.17 2.83l1.41 1.41zM12 10c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm8 2c0 2.21-.9 4.21-2.35 5.65l1.42 1.42C20.88 17.26 22 14.76 22 12s-1.12-5.26-2.93-7.07l-1.42 1.42A7.94 7.94 0 0 1 20 12zM6.35 6.35L4.93 4.93C3.12 6.74 2 9.24 2 12s1.12 5.26 2.93 7.07l1.42-1.42C4.9 16.21 4 14.21 4 12s.9-4.21 2.35-5.65z'),
   plus: svg('M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z'),
   image: svg('M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z'),
+  wave: svg('M7 18h2V6H7v12zm4 4h2V2h-2v20zm-8-8h2v-4H3v4zm12 4h2V6h-2v12zm4-8v4h2v-4h-2z'),
   note: svg('M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z'),
   trash: svg('M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z'),
   save: svg('M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z'),
@@ -82,6 +83,7 @@ const UI = {
       if (Settings.autoUpdate) setTimeout(() => this.checkUpdate(true), 5000);
     }
     Player.on(() => this.onPlayer());
+    window.native.keepAwake(Settings.keepAwake);
   },
 
   // ---------------- Layout ----------------
@@ -521,6 +523,7 @@ const UI = {
       ${sw('autoCovers', 'Fix new albums automatically', 'Checks for missing art when your mixes refresh')}
       <h2>Layout</h2>${LAYOUTS.map((l) => `<div class="setting" data-act="layout" data-id="${l.id}" style="cursor:pointer"><div class="l"><div>${esc(l.name)}</div><div class="s">${esc(l.blurb)}</div></div><div class="radio ${Settings.layout === l.id ? 'on' : ''}"></div></div>`).join('')}
       <h2>Theme</h2><div class="themes">${THEMES.map((t) => `<div class="theme ${t.id === Settings.theme ? 'on' : ''}" data-act="theme" data-id="${t.id}"><div class="sw" style="background:${t.bg}"><span style="background:${t.accent}"></span></div>${esc(t.name.split(' (')[0])}${t.name.includes('(') ? `<div class="sub">${esc(t.name.split('(')[1].replace(')', ''))}</div>` : ''}</div>`).join('')}</div>
+      <h2>Screen</h2>${sw('keepAwake', 'Keep the screen awake', 'Stops the screen from going to sleep while Feynos Music is open')}
       <h2>Updates</h2>${sw('autoUpdate', 'Check for updates on start')}
       <div class="setting"><div class="l"><div>Feynos Music for Linux ${esc(APP_VERSION)}</div></div><button class="btn" data-act="check-update">Check now</button></div></div>`;
   },
@@ -560,6 +563,7 @@ const UI = {
         <button class="iconbtn ${rep !== 'off' ? 'on' : ''}" data-act="p-repeat" title="Repeat">${rep === 'one' ? ICON.repeat1 : ICON.repeat}</button></div>
         <div class="seek"><span id="pos">0:00</span><input type="range" id="seek" min="0" max="1000" value="0"><span id="dur">0:00</span></div></div>
       <div class="right">${Jam.role !== 'none' ? `<button class="iconbtn on" data-act="nav" data-route="jam" title="Jam">${ICON.jam}</button>` : ''}
+        <button class="iconbtn ${Settings.visualizer !== 'off' ? 'on' : ''}" data-act="vis-cycle" title="Visualizer (V)">${ICON.wave}</button>
         <button class="iconbtn ${this.npOpen && this.npTab === 'lyrics' ? 'on' : ''}" data-act="np-tab" data-tab="lyrics" title="Lyrics">${ICON.lyrics}</button>
         <button class="iconbtn ${this.npOpen && this.npTab === 'queue' ? 'on' : ''}" data-act="np-tab" data-tab="queue" title="Queue">${ICON.queue}</button>
         ${Jam.isGuest() ? '' : `${ICON.volume.replace('<svg', '<svg width="20" height="20" style="color:var(--muted)"')}<input type="range" id="vol" min="0" max="100" value="${Math.round(Player.audio.volume * 100)}" style="--p:${Math.round(Player.audio.volume * 100)}%">`}</div>`;
@@ -616,11 +620,14 @@ const UI = {
         <button class="iconbtn" data-act="q-remove" data-i="${i}" title="Remove">${ICON.close}</button></div>`).join('') : '<p class="muted">Nothing queued</p>'}`;
     v.innerHTML = `<div class="bg" style="background-image:url('${esc(art)}')"></div>
       <button class="iconbtn np-close" data-act="np-close" title="Close">${ICON.down}</button>
-      <div class="left"><img src="${esc(art)}" alt="" onerror="this.src='${PLACEHOLDER}'"><div class="t">${esc(s.title)}</div>
+      <div class="left">${this.visOrArt(art)}<div class="t">${esc(s.title)}</div>
         <div class="muted">${s.artistId ? `<span class="link" data-act="go-artist" data-id="${esc(s.artistId)}">${esc(s.artist || '')}</span>` : esc(s.artist || '')}${s.album ? ` · ${s.albumId ? `<span class="link" data-act="go-album" data-id="${esc(s.albumId)}">${esc(s.album)}</span>` : esc(s.album)}` : ''}</div>
-        ${Jam.role !== 'none' ? `<div style="color:var(--accent);font-weight:700">Jam · ${esc(Jam.people().join(', '))}</div>` : ''}</div>
+        ${Jam.role !== 'none' ? `<div style="color:var(--accent);font-weight:700">Jam · ${esc(Jam.people().join(', '))}</div>` : ''}
+        <button class="btn ${Settings.visualizer !== 'off' ? 'primary' : ''}" data-act="vis-cycle">${ICON.wave} Visualizer: ${VIS_LABEL[Settings.visualizer] || 'Off'}</button></div>
       <div class="right">${this.chips('npTab', Settings.layout === 'youtube' ? [['queue', 'UP NEXT'], ['lyrics', 'LYRICS']] : [['lyrics', 'Lyrics'], ['queue', 'Up next']], this.npTab)}<div class="panel" id="nppanel">${this.npTab === 'queue' ? queueHtml : '<div class="spinner"></div>'}</div></div>`;
     this.markCurrent();
+    const vis = $('#vis');
+    if (vis) Visualizer.attach(vis);
     if (this.npTab === 'lyrics') {
       if (this.lyricsFor !== s.id) {
         this.lyricsFor = s.id;
@@ -637,6 +644,14 @@ const UI = {
       this.curLyric = -1;
       this.highlightLyric(Player.position());
     }
+  },
+
+  /** Album art, or the visualizer in its place. */
+  visOrArt(art) {
+    const style = Settings.visualizer || 'off';
+    if (style === 'off') return `<img src="${esc(art)}" alt="" onerror="this.src='${PLACEHOLDER}'">`;
+    const note = Player.remote ? `<div class="visnote">The visualizer follows music playing on this computer. In a jam the music plays on the host.</div>` : '';
+    return `<div class="visbox">${style === 'circle' ? `<img class="vc" src="${esc(art)}" alt="" onerror="this.src='${PLACEHOLDER}'">` : ''}<canvas id="vis"></canvas>${note}</div>`;
   },
 
   highlightLyric(pos) {
@@ -884,6 +899,7 @@ const UI = {
         Settings[d.key] = !Settings[d.key];
         saveSettings();
         el.classList.toggle('on', !!Settings[d.key]);
+        if (d.key === 'keepAwake') window.native.keepAwake(Settings.keepAwake);
         break;
       case 'logout':
         if (confirm('Sign out of this server?')) {
@@ -971,6 +987,14 @@ const UI = {
         }
         break;
       case 'modal-close': this.closeModal(); break;
+      case 'vis-cycle':
+        Settings.visualizer = Visualizer.next(Settings.visualizer || 'off');
+        saveSettings();
+        if (Settings.visualizer !== 'off') Player.analyserNode();
+        if (!this.npOpen) this.openNp();
+        else this.renderNp();
+        toast(`Visualizer: ${VIS_LABEL[Settings.visualizer]}`);
+        break;
       case 'login': {
         const err = $('#l-err');
         err.textContent = 'Connecting…';
@@ -1066,6 +1090,8 @@ const UI = {
         Player.next();
       } else if (ev.ctrlKey && ev.key === 'ArrowLeft') {
         Player.previous();
+      } else if (ev.key.toLowerCase() === 'v' && !ev.ctrlKey && !ev.altKey) {
+        this.act('vis-cycle', ev.target, ev);
       } else if (ev.ctrlKey && ev.key.toLowerCase() === 'f') {
         this.go('search', {});
       }

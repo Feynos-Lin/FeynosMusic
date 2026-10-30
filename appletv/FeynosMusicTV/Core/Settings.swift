@@ -1,3 +1,4 @@
+import UIKit
 import Foundation
 
 /// One person's Navidrome login (plus their ListenBrainz account). Each profile has its own
@@ -45,6 +46,13 @@ final class AppSettings: ObservableObject {
     @Published var syncMixes: Bool { didSet { d.set(syncMixes, forKey: "syncMixes") } }
     @Published var autoCovers: Bool { didSet { d.set(autoCovers, forKey: "autoCovers") } }
     @Published var theme: String { didSet { d.set(theme, forKey: "theme") } }
+    @Published var keepAwake: Bool { didSet { d.set(keepAwake, forKey: "keepAwake"); applyKeepAwake() } }
+    @Published var visualizer: String { didSet { d.set(visualizer, forKey: "visualizer") } }
+
+    /// Stops the Apple TV from going to sleep (or starting the screensaver) while the app is open.
+    func applyKeepAwake() {
+        UIApplication.shared.isIdleTimerDisabled = keepAwake
+    }
 
     private var applying = false
 
@@ -56,6 +64,8 @@ final class AppSettings: ObservableObject {
         syncMixes = d.object(forKey: "syncMixes") as? Bool ?? false
         autoCovers = d.object(forKey: "autoCovers") as? Bool ?? true
         theme = d.string(forKey: "theme") ?? "feynos"
+        keepAwake = d.object(forKey: "keepAwake") as? Bool ?? true
+        visualizer = d.string(forKey: "visualizer") ?? "off"
 
         if let data = d.data(forKey: "profiles"), let list = try? JSONDecoder().decode([Profile].self, from: data) {
             profiles = list

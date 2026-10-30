@@ -28,7 +28,7 @@ struct NowPlayingView: View {
                         VStack(spacing: 26) {
                             HStack(alignment: .top, spacing: 60) {
                                 VStack(alignment: .leading, spacing: 14) {
-                                    CoverImage(coverArt: song.coverArt, albumId: song.albumId, size: 1000, corner: 16)
+                                    ArtOrVisualizer(song: song)
                                         .frame(width: art, height: art)
                                         .shadow(radius: 30)
                                     if jam.active {
@@ -97,6 +97,7 @@ struct NowPlayingView: View {
 private struct Controls: View {
     let song: Song
     @EnvironmentObject var player: Player
+    @EnvironmentObject var settings: AppSettings
     @EnvironmentObject var store: Store
 
     var body: some View {
@@ -122,6 +123,13 @@ private struct Controls: View {
             }
             Button { Actions.startRadio(song) } label: { Image(systemName: "dot.radiowaves.left.and.right") }
             Button { Actions.addToPlaylistRequest = [song] } label: { Image(systemName: "text.badge.plus") }
+            Button {
+                let next = VisStyle.next(settings.visualizer)
+                settings.visualizer = next
+                toast("Visualizer: \(VisStyle.label(next))")
+            } label: {
+                Image(systemName: "waveform").foregroundStyle(settings.visualizer == "off" ? Color.primary : Color.accentColor)
+            }
         }
     }
 }

@@ -111,6 +111,12 @@ struct SettingsView: View {
                     Text(settings.lastMixGen > 0 ? "Last updated \(timeAgo(Date(timeIntervalSince1970: settings.lastMixGen))). Mixes refresh when you open the app once a week has passed." : "Mixes refresh weekly when you open the app.")
                 }
 
+                Section("Screen") {
+                    Toggle("Keep the TV awake while Feynos Music is open", isOn: $settings.keepAwake)
+                    Picker("Visualizer", selection: $settings.visualizer) {
+                        ForEach(VisStyle.all, id: \.self) { Text(VisStyle.label($0)).tag($0) }
+                    }
+                }
                 Section("Theme") {
                     Picker("Theme", selection: $settings.theme) {
                         ForEach(TVTheme.all) { t in

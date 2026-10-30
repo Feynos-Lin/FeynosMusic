@@ -235,6 +235,7 @@ final class Player: ObservableObject {
                 }
             }
         }
+        AudioTap.shared.attach(to: item)
         av.replaceCurrentItem(with: item)
         position = 0
         duration = Double(song.seconds)

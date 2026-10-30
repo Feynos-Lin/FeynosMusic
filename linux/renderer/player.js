@@ -20,8 +20,31 @@ const Player = {
   nowPlayingSent: false,
   lastTick: 0,
 
+  // Visualizer: the audio is routed through an analyser the first time a visualizer opens.
+  ctx: null,
+  analyser: null,
+  analyserNode() {
+    if (!this.analyser) {
+      try {
+        this.ctx = new AudioContext();
+        const src = this.ctx.createMediaElementSource(this.audio);
+        this.analyser = this.ctx.createAnalyser();
+        this.analyser.fftSize = 2048;
+        this.analyser.smoothingTimeConstant = 0.75;
+        src.connect(this.analyser);
+        this.analyser.connect(this.ctx.destination);
+      } catch (e) {
+        console.error('visualizer', e);
+        return null;
+      }
+    }
+    if (this.ctx.state === 'suspended') this.ctx.resume();
+    return this.analyser;
+  },
+
   init() {
     const a = this.audio;
+    a.crossOrigin = 'anonymous';
     a.preload = 'auto';
     a.volume = Settings.volume ?? 0.9;
     a.addEventListener('ended', () => this.ended());

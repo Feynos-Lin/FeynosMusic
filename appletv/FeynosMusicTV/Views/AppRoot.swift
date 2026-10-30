@@ -20,6 +20,7 @@ struct FeynosMusicTVApp: App {
         }
         .onChange(of: phase) { _, newPhase in
             if newPhase == .active {
+                AppSettings.shared.applyKeepAwake()
                 Task {
                     await Store.shared.flushListens()
                     await Mixes.shared.maybeGenerate()
@@ -59,6 +60,7 @@ struct RootView: View {
         }
         .tint(theme.accent)
         .animation(.easeOut, value: toaster.message)
+        .onAppear { settings.applyKeepAwake() }
         .sheet(item: Binding(
             get: { app.addToPlaylist.map { SongBatch(songs: $0) } },
             set: { app.addToPlaylist = $0?.songs }

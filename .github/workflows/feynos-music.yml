@@ -1684,6 +1684,7 @@ jobs:
               val autoCovers: Boolean = true,
               val theme: String = "feynos",
               val layout: String = "feynos",
+              val visualizer: String = "off",
           ) {
               val loggedIn: Boolean get() = serverUrl.isNotBlank() && username.isNotBlank() && token.isNotBlank()
               val lbConnected: Boolean get() = lbToken.isNotBlank() && lbUser.isNotBlank()
@@ -1710,6 +1711,7 @@ jobs:
               private val kAutoCovers = booleanPreferencesKey("auto_covers")
               private val kTheme = stringPreferencesKey("theme")
               private val kLayout = stringPreferencesKey("layout")
+              private val kVisualizer = stringPreferencesKey("visualizer")
 
               private val _state = MutableStateFlow(AppSettings())
               val state: StateFlow<AppSettings> = _state.asStateFlow()
@@ -1748,6 +1750,7 @@ jobs:
                       autoCovers = p[kAutoCovers] ?: d.autoCovers,
                       theme = p[kTheme] ?: d.theme,
                       layout = p[kLayout] ?: d.layout,
+                      visualizer = p[kVisualizer] ?: d.visualizer,
                   )
               }
 
@@ -1771,6 +1774,7 @@ jobs:
                   p[kLastMix] = s.lastMixGen
                   p[kTheme] = s.theme
                   p[kLayout] = s.layout
+                  p[kVisualizer] = s.visualizer
                   p[kAutoCovers] = s.autoCovers
               }
           }
@@ -3456,6 +3460,7 @@ jobs:
           package com.feynos.music.player
 
           import android.app.PendingIntent
+          import android.content.Context
           import android.content.Intent
           import androidx.annotation.OptIn
           import androidx.media3.common.AudioAttributes
@@ -3466,7 +3471,11 @@ jobs:
           import androidx.media3.datasource.DefaultDataSource
           import androidx.media3.datasource.cache.CacheDataSource
           import androidx.media3.datasource.okhttp.OkHttpDataSource
+          import androidx.media3.exoplayer.DefaultRenderersFactory
           import androidx.media3.exoplayer.ExoPlayer
+          import androidx.media3.exoplayer.audio.AudioSink
+          import androidx.media3.exoplayer.audio.DefaultAudioSink
+          import androidx.media3.exoplayer.audio.TeeAudioProcessor
           import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
           import androidx.media3.session.DefaultMediaNotificationProvider
           import androidx.media3.session.MediaSession
@@ -3515,7 +3524,16 @@ jobs:
                       .setUpstreamDataSourceFactory(upstream)
                       .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
 
-                  player = ExoPlayer.Builder(this)
+                  // Lets the visualizer read the audio on its way to the speaker.
+                  val renderers = object : DefaultRenderersFactory(this) {
+                      override fun buildAudioSink(context: Context, enableFloatOutput: Boolean, enableAudioTrackPlaybackParams: Boolean): AudioSink =
+                          DefaultAudioSink.Builder(context)
+                              .setAudioProcessors(arrayOf(TeeAudioProcessor(VisualizerTap)))
+                              .setEnableFloatOutput(enableFloatOutput)
+                              .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+                              .build()
+                  }
+                  player = ExoPlayer.Builder(this, renderers)
                       .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
                       .setAudioAttributes(
                           AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(),
@@ -4063,7 +4081,156 @@ jobs:
               }
           }
           FEYNOS_EOF_046
-          cat > 'app/src/main/java/com/feynos/music/update/Updater.kt' <<'FEYNOS_EOF_047'
+          cat > 'app/src/main/java/com/feynos/music/player/VisualizerTap.kt' <<'FEYNOS_EOF_047'
+          package com.feynos.music.player
+
+          import androidx.annotation.OptIn
+          import androidx.media3.common.C
+          import androidx.media3.common.util.UnstableApi
+          import androidx.media3.exoplayer.audio.TeeAudioProcessor
+          import kotlinx.coroutines.flow.MutableStateFlow
+          import kotlinx.coroutines.flow.StateFlow
+          import java.nio.ByteBuffer
+          import java.nio.ByteOrder
+          import kotlin.math.PI
+          import kotlin.math.cos
+          import kotlin.math.hypot
+          import kotlin.math.log10
+          import kotlin.math.pow
+          import kotlin.math.sin
+
+          /** One frame for the visualizer: frequency bands (0..1) and a short waveform (-1..1). */
+          class VisFrame(val bands: FloatArray, val wave: FloatArray, val at: Long)
+
+          /**
+           * Reads the decoded audio on its way to the speaker (no microphone permission needed)
+           * and turns it into bands and a waveform. Only does work while a visualizer is on screen.
+           */
+          @OptIn(UnstableApi::class)
+          object VisualizerTap : TeeAudioProcessor.AudioBufferSink {
+              const val BANDS = 48
+              private const val N = 1024
+              private val ring = FloatArray(N)
+              private var pos = 0
+              private var sampleRate = 44100
+              private var channels = 2
+              private var encoding = C.ENCODING_PCM_16BIT
+              private var last = 0L
+              @Volatile var watchers = 0
+
+              private val _frames = MutableStateFlow(VisFrame(FloatArray(BANDS), FloatArray(128), 0L))
+              val frames: StateFlow<VisFrame> = _frames
+
+              private val window = FloatArray(N) { (0.5 - 0.5 * cos(2 * PI * it / (N - 1))).toFloat() }
+              private val re = FloatArray(N)
+              private val im = FloatArray(N)
+
+              override fun flush(sampleRateHz: Int, channelCount: Int, encoding: Int) {
+                  sampleRate = sampleRateHz
+                  channels = channelCount.coerceAtLeast(1)
+                  this.encoding = encoding
+                  pos = 0
+              }
+
+              override fun handleBuffer(buffer: ByteBuffer) {
+                  if (watchers <= 0) return
+                  val b = buffer.duplicate().order(ByteOrder.nativeOrder())
+                  when (encoding) {
+                      C.ENCODING_PCM_FLOAT -> {
+                          val fb = b.asFloatBuffer()
+                          while (fb.remaining() >= channels) {
+                              var sum = 0f
+                              repeat(channels) { sum += fb.get() }
+                              push(sum / channels)
+                          }
+                      }
+                      C.ENCODING_PCM_16BIT -> {
+                          val sb = b.asShortBuffer()
+                          while (sb.remaining() >= channels) {
+                              var sum = 0f
+                              repeat(channels) { sum += sb.get() / 32768f }
+                              push(sum / channels)
+                          }
+                      }
+                      else -> return
+                  }
+                  val now = System.currentTimeMillis()
+                  if (now - last >= 30) {
+                      last = now
+                      analyse(now)
+                  }
+              }
+
+              private fun push(v: Float) {
+                  ring[pos] = v
+                  pos = (pos + 1) % N
+              }
+
+              private fun analyse(now: Long) {
+                  for (i in 0 until N) {
+                      re[i] = ring[(pos + i) % N] * window[i]
+                      im[i] = 0f
+                  }
+                  fft(re, im)
+                  val bands = FloatArray(BANDS)
+                  val lo = 40.0
+                  val hi = (sampleRate / 2.0).coerceAtMost(16000.0)
+                  for (b in 0 until BANDS) {
+                      val f0 = lo * (hi / lo).pow(b.toDouble() / BANDS)
+                      val f1 = lo * (hi / lo).pow((b + 1).toDouble() / BANDS)
+                      val i0 = (f0 / sampleRate * N).toInt().coerceIn(1, N / 2 - 1)
+                      val i1 = (f1 / sampleRate * N).toInt().coerceIn(i0 + 1, N / 2)
+                      var peak = 0.0
+                      for (i in i0 until i1) peak = maxOf(peak, hypot(re[i].toDouble(), im[i].toDouble()))
+                      val db = 20 * log10(peak / (N / 4) + 1e-9)
+                      bands[b] = ((db + 60) / 60).toFloat().coerceIn(0f, 1f)
+                  }
+                  val wave = FloatArray(128) { ring[(pos + N - 256 + it * 2) % N] }
+                  _frames.value = VisFrame(bands, wave, now)
+              }
+
+              private fun fft(x: FloatArray, y: FloatArray) {
+                  val n = x.size
+                  var j = 0
+                  for (i in 1 until n) {
+                      var bit = n shr 1
+                      while (j and bit != 0) {
+                          j = j xor bit
+                          bit = bit shr 1
+                      }
+                      j = j xor bit
+                      if (i < j) {
+                          val tx = x[i]; x[i] = x[j]; x[j] = tx
+                          val ty = y[i]; y[i] = y[j]; y[j] = ty
+                      }
+                  }
+                  var len = 2
+                  while (len <= n) {
+                      val ang = -2 * PI / len
+                      val wr = cos(ang).toFloat()
+                      val wi = sin(ang).toFloat()
+                      var i = 0
+                      while (i < n) {
+                          var cr = 1f
+                          var ci = 0f
+                          for (k in 0 until len / 2) {
+                              val ur = x[i + k]; val ui = y[i + k]
+                              val vr = x[i + k + len / 2] * cr - y[i + k + len / 2] * ci
+                              val vi = x[i + k + len / 2] * ci + y[i + k + len / 2] * cr
+                              x[i + k] = ur + vr; y[i + k] = ui + vi
+                              x[i + k + len / 2] = ur - vr; y[i + k + len / 2] = ui - vi
+                              val nr = cr * wr - ci * wi
+                              ci = cr * wi + ci * wr
+                              cr = nr
+                          }
+                          i += len
+                      }
+                      len = len shl 1
+                  }
+              }
+          }
+          FEYNOS_EOF_047
+          cat > 'app/src/main/java/com/feynos/music/update/Updater.kt' <<'FEYNOS_EOF_048'
           package com.feynos.music.update
 
           import android.content.Context
@@ -4149,8 +4316,8 @@ jobs:
                   return true
               }
           }
-          FEYNOS_EOF_047
-          cat > 'app/src/main/java/com/feynos/music/widget/Widgets.kt' <<'FEYNOS_EOF_048'
+          FEYNOS_EOF_048
+          cat > 'app/src/main/java/com/feynos/music/widget/Widgets.kt' <<'FEYNOS_EOF_049'
           package com.feynos.music.widget
 
           import android.app.PendingIntent
@@ -4273,8 +4440,8 @@ jobs:
                   if (cover.isNotEmpty()) mgr.updateAppWidget(cover, build(context, R.layout.widget_cover, CoverWidget::class.java, 200))
               }
           }
-          FEYNOS_EOF_048
-          cat > 'app/src/main/java/com/feynos/music/work/Workers.kt' <<'FEYNOS_EOF_049'
+          FEYNOS_EOF_049
+          cat > 'app/src/main/java/com/feynos/music/work/Workers.kt' <<'FEYNOS_EOF_050'
           package com.feynos.music.work
 
           import android.content.Context
@@ -4419,12 +4586,12 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_049
+          FEYNOS_EOF_050
 
       - name: Write user interface
         run: |
           mkdir -p "app/src/main/java/com/feynos/music/ui"
-          cat > 'app/src/main/java/com/feynos/music/ui/Components.kt' <<'FEYNOS_EOF_050'
+          cat > 'app/src/main/java/com/feynos/music/ui/Components.kt' <<'FEYNOS_EOF_051'
           @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
           package com.feynos.music.ui
@@ -4898,8 +5065,8 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_050
-          cat > 'app/src/main/java/com/feynos/music/ui/CoverArtScreens.kt' <<'FEYNOS_EOF_051'
+          FEYNOS_EOF_051
+          cat > 'app/src/main/java/com/feynos/music/ui/CoverArtScreens.kt' <<'FEYNOS_EOF_052'
           @file:OptIn(ExperimentalMaterial3Api::class)
 
           package com.feynos.music.ui
@@ -5094,8 +5261,8 @@ jobs:
                   modifier = Modifier.clickable(onClick = onClick),
               )
           }
-          FEYNOS_EOF_051
-          cat > 'app/src/main/java/com/feynos/music/ui/DetailScreens.kt' <<'FEYNOS_EOF_052'
+          FEYNOS_EOF_052
+          cat > 'app/src/main/java/com/feynos/music/ui/DetailScreens.kt' <<'FEYNOS_EOF_053'
           @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
           package com.feynos.music.ui
@@ -5553,8 +5720,8 @@ jobs:
                   DownloadsContent()
               }
           }
-          FEYNOS_EOF_052
-          cat > 'app/src/main/java/com/feynos/music/ui/ForYouScreens.kt' <<'FEYNOS_EOF_053'
+          FEYNOS_EOF_053
+          cat > 'app/src/main/java/com/feynos/music/ui/ForYouScreens.kt' <<'FEYNOS_EOF_054'
           @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
           package com.feynos.music.ui
@@ -5958,8 +6125,8 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_053
-          cat > 'app/src/main/java/com/feynos/music/ui/JamScreen.kt' <<'FEYNOS_EOF_054'
+          FEYNOS_EOF_054
+          cat > 'app/src/main/java/com/feynos/music/ui/JamScreen.kt' <<'FEYNOS_EOF_055'
           @file:OptIn(ExperimentalMaterial3Api::class)
 
           package com.feynos.music.ui
@@ -6182,8 +6349,8 @@ jobs:
                   )
               }
           }
-          FEYNOS_EOF_054
-          cat > 'app/src/main/java/com/feynos/music/ui/Layouts.kt' <<'FEYNOS_EOF_055'
+          FEYNOS_EOF_055
+          cat > 'app/src/main/java/com/feynos/music/ui/Layouts.kt' <<'FEYNOS_EOF_056'
           package com.feynos.music.ui
 
           import androidx.compose.foundation.background
@@ -6315,8 +6482,8 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_055
-          cat > 'app/src/main/java/com/feynos/music/ui/MainScreens.kt' <<'FEYNOS_EOF_056'
+          FEYNOS_EOF_056
+          cat > 'app/src/main/java/com/feynos/music/ui/MainScreens.kt' <<'FEYNOS_EOF_057'
           @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
           package com.feynos.music.ui
@@ -7055,8 +7222,8 @@ jobs:
                   dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
               )
           }
-          FEYNOS_EOF_056
-          cat > 'app/src/main/java/com/feynos/music/ui/NowPlaying.kt' <<'FEYNOS_EOF_057'
+          FEYNOS_EOF_057
+          cat > 'app/src/main/java/com/feynos/music/ui/NowPlaying.kt' <<'FEYNOS_EOF_058'
           @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
           package com.feynos.music.ui
@@ -7095,6 +7262,7 @@ jobs:
           import com.feynos.music.player.PlayerState
           import com.feynos.music.util.formatMs
           import kotlinx.coroutines.Dispatchers
+          import kotlinx.coroutines.launch
           import kotlinx.coroutines.withContext
 
           private val FallbackBg = Color(0xFF2B2140)
@@ -7152,11 +7320,7 @@ jobs:
                                   // Biggest square that fits both the width and the height available.
                                   BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                                       val side = if (maxWidth < maxHeight) maxWidth else maxHeight
-                                      Cover(
-                                          song.coverArt, albumId = song.albumId,
-                                          modifier = Modifier.size(side).shadow(24.dp, RoundedCornerShape(10.dp)),
-                                          size = 1000, shape = RoundedCornerShape(10.dp),
-                                      )
+                                      ArtOrVisualizer(song, Modifier.size(side).shadow(24.dp, RoundedCornerShape(10.dp)), RoundedCornerShape(10.dp))
                                   }
                                   Spacer(Modifier.height(16.dp))
                                   PlayerControls(ps, song, onSleep = { showSleep = true }, onLyrics = { sideTab = 0 }, onQueue = { sideTab = 1 })
@@ -7172,11 +7336,7 @@ jobs:
                       } else {
                           Column(Modifier.fillMaxSize().padding(horizontal = 24.dp)) {
                               Spacer(Modifier.weight(0.5f))
-                              Cover(
-                                  song.coverArt, albumId = song.albumId,
-                                  modifier = Modifier.fillMaxWidth().aspectRatio(1f).shadow(24.dp, RoundedCornerShape(10.dp)),
-                                  size = 1000, shape = RoundedCornerShape(10.dp),
-                              )
+                              ArtOrVisualizer(song, Modifier.fillMaxWidth().aspectRatio(1f).shadow(24.dp, RoundedCornerShape(10.dp)), RoundedCornerShape(10.dp))
                               Spacer(Modifier.weight(0.5f))
                               PlayerControls(ps, song, onSleep = { showSleep = true }, onLyrics = { sheet = "lyrics" }, onQueue = { sheet = "queue" })
                               Spacer(Modifier.height(16.dp))
@@ -7304,6 +7464,7 @@ jobs:
                       IconButton(onClick = onSleep) {
                           Icon(Icons.Rounded.Bedtime, "Sleep timer", tint = if (sleeping) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                       }
+                      VisualizerButton()
                       Spacer(Modifier.weight(1f))
                       IconButton(onClick = onLyrics) { Icon(Icons.Rounded.FormatQuote, "Lyrics", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
                       IconButton(onClick = onQueue) { Icon(Icons.AutoMirrored.Rounded.QueueMusic, "Queue", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
@@ -7490,11 +7651,7 @@ jobs:
                   Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp)) {
                       Column(Modifier.height(page)) {
                           Spacer(Modifier.weight(0.5f))
-                          Cover(
-                              song.coverArt, albumId = song.albumId,
-                              modifier = Modifier.fillMaxWidth().aspectRatio(1f).shadow(24.dp, RoundedCornerShape(10.dp)),
-                              size = 1000, shape = RoundedCornerShape(10.dp),
-                          )
+                          ArtOrVisualizer(song, Modifier.fillMaxWidth().aspectRatio(1f).shadow(24.dp, RoundedCornerShape(10.dp)), RoundedCornerShape(10.dp))
                           Spacer(Modifier.weight(0.5f))
                           PlayerControls(ps, song, onSleep = onSleep, onLyrics = onLyrics, onQueue = onQueue)
                           Spacer(Modifier.height(16.dp))
@@ -7542,13 +7699,9 @@ jobs:
               val on = MaterialTheme.colorScheme.primary
               Column(Modifier.fillMaxSize().padding(horizontal = 28.dp)) {
                   Spacer(Modifier.weight(0.35f))
-                  Cover(
-                      song.coverArt, albumId = song.albumId,
-                      modifier = Modifier.fillMaxWidth().aspectRatio(1f)
+                  ArtOrVisualizer(song, Modifier.fillMaxWidth().aspectRatio(1f)
                           .graphicsLayer { scaleX = scale; scaleY = scale }
-                          .shadow(if (ps.isPlaying) 30.dp else 10.dp, RoundedCornerShape(12.dp)),
-                      size = 1000, shape = RoundedCornerShape(12.dp),
-                  )
+                          .shadow(if (ps.isPlaying) 30.dp else 10.dp, RoundedCornerShape(12.dp)), RoundedCornerShape(12.dp))
                   Spacer(Modifier.weight(0.45f))
                   Row(verticalAlignment = Alignment.CenterVertically) {
                       Column(Modifier.weight(1f)) {
@@ -7581,6 +7734,7 @@ jobs:
                           Icon(if (ps.repeat == Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat, "Repeat", tint = if (ps.repeat != Player.REPEAT_MODE_OFF) on else dim)
                       }
                       IconButton(onClick = onSleep) { Icon(Icons.Rounded.Bedtime, "Sleep timer", tint = if (sleeping) on else dim) }
+                      VisualizerButton(dim)
                       IconButton(onClick = onQueue) { Icon(Icons.AutoMirrored.Rounded.QueueMusic, "Queue", tint = dim) }
                   }
                   Spacer(Modifier.height(16.dp))
@@ -7595,10 +7749,7 @@ jobs:
               val on = MaterialTheme.colorScheme.primary
               Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
                   Spacer(Modifier.weight(0.4f))
-                  Cover(
-                      song.coverArt, albumId = song.albumId,
-                      modifier = Modifier.fillMaxWidth().aspectRatio(1f), size = 1000, shape = RoundedCornerShape(6.dp),
-                  )
+                  ArtOrVisualizer(song, Modifier.fillMaxWidth().aspectRatio(1f), RoundedCornerShape(6.dp))
                   Spacer(Modifier.weight(0.4f))
                   Text(song.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, maxLines = 1, modifier = Modifier.basicMarquee())
                   Text(song.artist.orEmpty(), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -7608,6 +7759,15 @@ jobs:
                       item { Pill(Icons.AutoMirrored.Rounded.PlaylistAdd, "Save") { graph.addToPlaylistRequest.value = listOf(song) } }
                       item { Pill(Icons.Rounded.Radio, "Radio") { graph.startRadio(song) } }
                       item { Pill(Icons.Rounded.Download, "Download") { graph.download(listOf(song)) } }
+                      item {
+                          val settings by graph.settings.state.collectAsStateWithLifecycle()
+                          val scope = rememberCoroutineScope()
+                          Pill(Icons.Rounded.GraphicEq, "Visualizer", if (settings.visualizer != "off") on else null) {
+                              val next = nextVisualizer(settings.visualizer)
+                              scope.launch { graph.settings.update { it.copy(visualizer = next) } }
+                              graph.toast("Visualizer: ${visualizerLabel(next)}")
+                          }
+                      }
                   }
                   Spacer(Modifier.height(8.dp))
                   SeekBar(ps)
@@ -7652,8 +7812,24 @@ jobs:
                   Text(label, style = MaterialTheme.typography.labelLarge)
               }
           }
-          FEYNOS_EOF_057
-          cat > 'app/src/main/java/com/feynos/music/ui/SettingsScreen.kt' <<'FEYNOS_EOF_058'
+
+
+          /** Cycles the visualizer: off, bars, wave, circle. */
+          @Composable
+          fun VisualizerButton(tint: Color = MaterialTheme.colorScheme.onSurfaceVariant) {
+              val settings by graph.settings.state.collectAsStateWithLifecycle()
+              val scope = rememberCoroutineScope()
+              val on = settings.visualizer != "off"
+              IconButton(onClick = {
+                  val next = nextVisualizer(settings.visualizer)
+                  scope.launch { graph.settings.update { it.copy(visualizer = next) } }
+                  graph.toast("Visualizer: ${visualizerLabel(next)}")
+              }) {
+                  Icon(Icons.Rounded.GraphicEq, "Visualizer", tint = if (on) MaterialTheme.colorScheme.primary else tint)
+              }
+          }
+          FEYNOS_EOF_058
+          cat > 'app/src/main/java/com/feynos/music/ui/SettingsScreen.kt' <<'FEYNOS_EOF_059'
           @file:OptIn(ExperimentalMaterial3Api::class)
 
           package com.feynos.music.ui
@@ -7965,8 +8141,8 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_058
-          cat > 'app/src/main/java/com/feynos/music/ui/Shell.kt' <<'FEYNOS_EOF_059'
+          FEYNOS_EOF_059
+          cat > 'app/src/main/java/com/feynos/music/ui/Shell.kt' <<'FEYNOS_EOF_060'
           @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
           package com.feynos.music.ui
@@ -8279,8 +8455,8 @@ jobs:
                   dismissButton = { TextButton(onClick = onDismiss, enabled = progress == null) { Text("Later") } },
               )
           }
-          FEYNOS_EOF_059
-          cat > 'app/src/main/java/com/feynos/music/ui/Theme.kt' <<'FEYNOS_EOF_060'
+          FEYNOS_EOF_060
+          cat > 'app/src/main/java/com/feynos/music/ui/Theme.kt' <<'FEYNOS_EOF_061'
           package com.feynos.music.ui
 
           import android.os.Build
@@ -8361,7 +8537,147 @@ jobs:
                   CompositionLocalProvider(LocalContentColor provides scheme.onBackground, content = content)
               }
           }
-          FEYNOS_EOF_060
+          FEYNOS_EOF_061
+          cat > 'app/src/main/java/com/feynos/music/ui/Visualizer.kt' <<'FEYNOS_EOF_062'
+          package com.feynos.music.ui
+
+          import androidx.compose.foundation.Canvas
+          import androidx.compose.foundation.background
+          import androidx.compose.foundation.layout.*
+          import androidx.compose.foundation.shape.CircleShape
+          import androidx.compose.material3.MaterialTheme
+          import androidx.compose.material3.Text
+          import androidx.compose.runtime.*
+          import androidx.compose.ui.Alignment
+          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.draw.clip
+          import androidx.compose.ui.geometry.Offset
+          import androidx.compose.ui.graphics.*
+          import androidx.compose.ui.graphics.drawscope.Stroke
+          import androidx.compose.ui.platform.LocalView
+          import androidx.compose.ui.text.style.TextAlign
+          import androidx.compose.ui.unit.dp
+          import androidx.lifecycle.compose.collectAsStateWithLifecycle
+          import com.feynos.music.data.Song
+          import com.feynos.music.player.VisualizerTap
+          import kotlin.math.PI
+          import kotlin.math.cos
+          import kotlin.math.min
+          import kotlin.math.sin
+
+          /** Visualizer styles, cycled with the visualizer button. */
+          val VisualizerStyles = listOf("off", "bars", "wave", "circle")
+
+          fun visualizerLabel(style: String) = when (style) {
+              "bars" -> "Bars"
+              "wave" -> "Wave"
+              "circle" -> "Circle"
+              else -> "Off"
+          }
+
+          fun nextVisualizer(style: String): String = VisualizerStyles[(VisualizerStyles.indexOf(style) + 1) % VisualizerStyles.size]
+
+          /** Album art, or the visualizer in its place when one is switched on. */
+          @Composable
+          fun ArtOrVisualizer(song: Song, modifier: Modifier, shape: androidx.compose.ui.graphics.Shape) {
+              val settings by graph.settings.state.collectAsStateWithLifecycle()
+              val style = settings.visualizer
+              if (style == "off") {
+                  Cover(song.coverArt, albumId = song.albumId, modifier = modifier, size = 1000, shape = shape)
+              } else {
+                  Box(modifier.clip(shape).background(Color.Black.copy(alpha = 0.25f)), contentAlignment = Alignment.Center) {
+                      if (style == "circle") {
+                          Cover(song.coverArt, albumId = song.albumId, modifier = Modifier.fillMaxSize(0.42f), size = 600, shape = CircleShape)
+                      }
+                      Visualizer(style, Modifier.fillMaxSize())
+                  }
+              }
+          }
+
+          @Composable
+          fun Visualizer(style: String, modifier: Modifier = Modifier) {
+              val jam by graph.jam.state.collectAsStateWithLifecycle()
+              // Keep the screen on and the audio tap running while this is showing.
+              val view = LocalView.current
+              DisposableEffect(Unit) {
+                  VisualizerTap.watchers++
+                  view.keepScreenOn = true
+                  onDispose {
+                      VisualizerTap.watchers--
+                      view.keepScreenOn = false
+                  }
+              }
+              if (jam.role == com.feynos.music.jam.JamRole.GUEST) {
+                  Box(modifier, contentAlignment = Alignment.Center) {
+                      Text(
+                          "The visualizer follows music playing on this phone. In a jam the music plays on the host.",
+                          color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center, modifier = Modifier.padding(24.dp),
+                      )
+                  }
+                  return
+              }
+              val frame by VisualizerTap.frames.collectAsStateWithLifecycle()
+              val shown = remember { FloatArray(VisualizerTap.BANDS) }
+              var tick by remember { mutableLongStateOf(0L) }
+              // Redraw every frame so bars fall smoothly (also when paused).
+              LaunchedEffect(Unit) { while (true) withFrameMillis { tick = it } }
+              val accent = MaterialTheme.colorScheme.primary
+              val accent2 = lerp(accent, Color.White, 0.55f)
+              Canvas(modifier) {
+                  tick
+                  val fresh = System.currentTimeMillis() - frame.at < 250
+                  for (i in shown.indices) {
+                      val target = if (fresh) frame.bands[i] else 0f
+                      shown[i] = if (target > shown[i]) shown[i] + (target - shown[i]) * 0.6f else shown[i] - (shown[i] - target) * 0.12f
+                  }
+                  val brush = Brush.verticalGradient(listOf(accent2, accent))
+                  when (style) {
+                      "bars" -> {
+                          val n = shown.size
+                          val gap = size.width / n * 0.25f
+                          val w = size.width / n - gap
+                          for (i in 0 until n) {
+                              val h = (shown[i] * size.height * 0.9f).coerceAtLeast(3f)
+                              drawRoundRect(
+                                  brush, topLeft = Offset(i * (w + gap) + gap / 2, size.height - h),
+                                  size = androidx.compose.ui.geometry.Size(w, h), cornerRadius = androidx.compose.ui.geometry.CornerRadius(w / 2),
+                              )
+                          }
+                      }
+                      "wave" -> {
+                          val wave = if (fresh) frame.wave else FloatArray(frame.wave.size)
+                          val path = Path()
+                          val mid = size.height / 2
+                          val level = shown.average().toFloat()
+                          wave.forEachIndexed { i, v ->
+                              val x = size.width * i / (wave.size - 1)
+                              val y = mid - v * size.height * 0.45f * (0.6f + level)
+                              if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                          }
+                          drawPath(path, accent2.copy(alpha = 0.35f), style = Stroke(width = 14f))
+                          drawPath(path, accent, style = Stroke(width = 5f))
+                      }
+                      "circle" -> {
+                          val c = center
+                          val r0 = min(size.width, size.height) * 0.23f
+                          val maxLen = min(size.width, size.height) * 0.25f
+                          val n = shown.size * 2
+                          for (i in 0 until n) {
+                              val v = shown[if (i < shown.size) i else n - 1 - i]
+                              val a = (2 * PI * i / n - PI / 2).toFloat()
+                              val len = 4f + v * maxLen
+                              drawLine(
+                                  brush = Brush.linearGradient(listOf(accent, accent2)),
+                                  start = Offset(c.x + cos(a) * r0, c.y + sin(a) * r0),
+                                  end = Offset(c.x + cos(a) * (r0 + len), c.y + sin(a) * (r0 + len)),
+                                  strokeWidth = 7f, cap = StrokeCap.Round,
+                              )
+                          }
+                      }
+                  }
+              }
+          }
+          FEYNOS_EOF_062
 
       - name: Set up Java 17
         uses: actions/setup-java@v4

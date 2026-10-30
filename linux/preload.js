@@ -4,6 +4,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('native', {
   md5: (s) => ipcRenderer.sendSync('app:md5', s),
   version: () => ipcRenderer.invoke('app:version'),
+  keepAwake: (on) => ipcRenderer.invoke('app:keepAwake', !!on),
   openExternal: (url) => ipcRenderer.invoke('app:open', url),
 });
 
