@@ -525,7 +525,7 @@ const UI = {
       <h2>Theme</h2><div class="themes">${THEMES.map((t) => `<div class="theme ${t.id === Settings.theme ? 'on' : ''}" data-act="theme" data-id="${t.id}"><div class="sw" style="background:${t.bg}"><span style="background:${t.accent}"></span></div>${esc(t.name.split(' (')[0])}${t.name.includes('(') ? `<div class="sub">${esc(t.name.split('(')[1].replace(')', ''))}</div>` : ''}</div>`).join('')}</div>
       <h2>Screen</h2>${sw('keepAwake', 'Keep the screen awake', 'Stops the screen from going to sleep while Feynos Music is open')}
       <h2>Updates</h2>${sw('autoUpdate', 'Check for updates on start')}
-      <div class="setting"><div class="l"><div>Feynos Music for Linux ${esc(APP_VERSION)}</div></div><button class="btn" data-act="check-update">Check now</button></div></div>`;
+      <div class="setting"><div class="l"><div>Feynos Music for ${OS_NAME} ${esc(APP_VERSION)}</div></div><button class="btn" data-act="check-update">Check now</button></div></div>`;
   },
 
   // ---------------- Player bar & Now Playing ----------------
@@ -772,23 +772,28 @@ const UI = {
 
   async checkUpdate(quiet) {
     try {
-      const res = await fetch('https://api.github.com/repos/Feynos-Lin/FeynosMusic/releases?per_page=30');
+      const prefix = IS_WIN ? 'windows-v' : 'linux-v';
+      const ext = IS_WIN ? '.exe' : '.rpm';
+      const res = await fetch('https://api.github.com/repos/Feynos-Lin/FeynosMusic/releases?per_page=50');
       const rels = await res.json();
-      const linux = (Array.isArray(rels) ? rels : []).find((r) => String(r.tag_name).startsWith('linux-v'));
-      if (!linux) {
+      const rel = (Array.isArray(rels) ? rels : []).find((r) => String(r.tag_name).startsWith(prefix));
+      if (!rel) {
         if (!quiet) toast("You're on the latest version");
         return;
       }
-      const latest = String(linux.tag_name).replace('linux-v', '');
+      const latest = String(rel.tag_name).replace(prefix, '');
       const newer = latest.split('.').map(Number).reduce((acc, n, i) => acc ?? (n > (+APP_VERSION.split('.')[i] || 0) ? true : n < (+APP_VERSION.split('.')[i] || 0) ? false : null), null);
       if (!newer) {
         if (!quiet) toast("You're on the latest version");
         return;
       }
-      const rpm = (linux.assets || []).find((a) => a.name.endsWith('.rpm'));
-      this.updateUrl = rpm ? rpm.browser_download_url : linux.html_url;
-      this.modal(`<h2 style="margin-top:0">Update available: ${esc(latest)}</h2><p class="muted" style="white-space:pre-wrap">${esc(linux.body || '')}</p>
-        <p class="muted">Download the new .rpm and open it to install, or run <code>sudo dnf install ./${esc(rpm ? rpm.name : 'feynos-music.rpm')}</code>.</p>
+      const file = (rel.assets || []).find((a) => a.name.endsWith(ext));
+      this.updateUrl = file ? file.browser_download_url : rel.html_url;
+      const how = IS_WIN
+        ? 'Download the new installer and run it. It updates the app in place and keeps your settings.'
+        : `Download the new .rpm and open it to install, or run <code>sudo dnf install ./${esc(file ? file.name : 'feynos-music.rpm')}</code>.`;
+      this.modal(`<h2 style="margin-top:0">Update available: ${esc(latest)}</h2><p class="muted" style="white-space:pre-wrap">${esc(rel.body || '')}</p>
+        <p class="muted">${how}</p>
         <div class="actions"><button class="btn primary" data-act="open-url" data-url="${esc(this.updateUrl)}">Download</button><button class="btn" data-act="modal-close">Later</button></div>`);
     } catch (e) {
       if (!quiet) toast("Couldn't check for updates");

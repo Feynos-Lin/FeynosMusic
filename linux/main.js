@@ -1,4 +1,4 @@
-// Feynos Music for Linux: Electron main process.
+// Feynos Music for Linux and Windows: Electron main process.
 // Handles the window, opening links, and the network side of jams
 // (TCP + Bonjour "_feynosjam._tcp", compatible with the Android and Apple TV apps).
 const { app, BrowserWindow, ipcMain, shell, Menu, powerSaveBlocker } = require('electron');
@@ -14,6 +14,9 @@ try {
 }
 
 let win = null;
+
+// Groups the taskbar icon and media controls under the app's name on Windows.
+if (process.platform === 'win32') app.setAppUserModelId('com.feynos.music.desktop');
 
 function createWindow() {
   win = new BrowserWindow({

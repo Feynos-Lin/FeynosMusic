@@ -1,0 +1,64 @@
+name: Build Windows app
+
+# The Windows app is built from the same code as the Linux app (the linux/ folder),
+# so every change to one reaches the other.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'linux/**'
+      - '.github/workflows/windows.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  exe:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        working-directory: linux
+        run: npm install --no-audit --no-fund
+
+      - name: Set version
+        working-directory: linux
+        run: npm version 1.0.${{ github.run_number }} --no-git-tag-version --allow-same-version
+
+      - name: Build installer
+        working-directory: linux
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: |
+          set -o pipefail
+          if ! npx electron-builder --win nsis --x64 --publish never 2>&1 | tee build.log; then
+            echo "::error::$(grep -v '^\s*•' build.log | tail -n 60 | sed 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g')"
+            exit 1
+          fi
+
+      - name: List output
+        run: ls -la linux/dist
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: windows-v1.0.${{ github.run_number }}
+          name: Feynos Music for Windows 1.0.${{ github.run_number }}
+          make_latest: false
+          body: |
+            Feynos Music desktop app for Windows 10 and 11 (64-bit).
+
+            Install: download Feynos-Music-Setup-1.0.${{ github.run_number }}.exe below and run it.
+            Windows may show "Windows protected your PC" because the installer isn't signed. Click "More info", then "Run anyway".
+            The first time you start a jam, allow Feynos Music through the Windows firewall so phones can join.
+          files: linux/dist/*.exe

@@ -2,7 +2,7 @@
   "name": "feynos-music",
   "productName": "Feynos Music",
   "version": "1.0.0",
-  "description": "Navidrome music player with ListenBrainz history, weekly mixes and jams",
+  "description": "Navidrome music player for Linux and Windows with ListenBrainz history, weekly mixes and jams",
   "homepage": "https://github.com/Feynos-Lin/FeynosMusic",
   "author": {
     "name": "Feynos",
@@ -50,6 +50,27 @@
       "fpm": [
         "--rpm-rpmbuild-define=_build_id_links none"
       ]
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "artifactName": "Feynos-Music-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Feynos Music",
+      "uninstallDisplayName": "Feynos Music"
     }
   },
   "repository": {

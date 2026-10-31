@@ -33,7 +33,7 @@ const Jam = {
     return this.role === 'guest';
   },
   myName() {
-    return Settings.username || 'Linux';
+    return Settings.username || OS_NAME;
   },
   people() {
     return this.role === 'host' ? [this.myName(), ...[...this.peers.values()].filter((p) => p.hello).map((p) => p.name)] : this.members;

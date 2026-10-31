@@ -1,6 +1,10 @@
 // Feynos Music for Linux — data layer: helpers, settings, local storage, Navidrome and ListenBrainz.
 'use strict';
 
+// The same code runs as the Linux and the Windows app.
+const IS_WIN = !!(window.native && window.native.platform === 'win32');
+const OS_NAME = IS_WIN ? 'Windows' : 'Linux';
+
 // ---------------- Helpers ----------------
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -258,7 +262,7 @@ const API = {
   url(endpoint, params = [], creds = null) {
     const c = creds || { server: Settings.serverUrl, user: Settings.username, token: Settings.token, salt: Settings.salt };
     const base = String(c.server).replace(/\/+$/, '');
-    const all = [['u', c.user], ['t', c.token], ['s', c.salt], ['v', '1.16.1'], ['c', 'FeynosMusicLinux'], ['f', 'json'], ...params];
+    const all = [['u', c.user], ['t', c.token], ['s', c.salt], ['v', '1.16.1'], ['c', 'FeynosMusic' + OS_NAME], ['f', 'json'], ...params];
     const q = all.filter(([, v]) => v !== undefined && v !== null).map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
     return `${base}/rest/${endpoint}?${q}`;
   },
@@ -472,7 +476,7 @@ const LB = {
     }
   },
   listenBody(type, song, at) {
-    const info = { media_player: 'Feynos Music Linux', submission_client: 'Feynos Music Linux', submission_client_version: APP_VERSION };
+    const info = { media_player: 'Feynos Music ' + OS_NAME, submission_client: 'Feynos Music ' + OS_NAME, submission_client_version: APP_VERSION };
     if (song.duration) info.duration_ms = song.duration * 1000;
     const meta = { artist_name: song.artist || 'Unknown Artist', track_name: song.title || '', additional_info: info };
     if (song.album) meta.release_name = song.album;
