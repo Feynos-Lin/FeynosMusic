@@ -133,9 +133,16 @@ final class AudioTap: @unchecked Sendable {
                     guard MTAudioProcessingTapGetSourceAudio(tap, frames, bufferList, flagsOut, nil, framesOut) == noErr else { return }
                     AudioTap.shared.write(UnsafeMutableAudioBufferListPointer(bufferList), frames: Int(framesOut.pointee))
                 })
+            // Apple changed this function's signature in Xcode 26 (Swift 6.2), so support both.
+            #if compiler(>=6.2)
+            var tapOut: MTAudioProcessingTap?
+            guard MTAudioProcessingTapCreate(kCFAllocatorDefault, &callbacks, kMTAudioProcessingTapCreationFlag_PostEffects, &tapOut) == noErr,
+                  let tap = tapOut else { return }
+            #else
             var tapOut: Unmanaged<MTAudioProcessingTap>?
             guard MTAudioProcessingTapCreate(kCFAllocatorDefault, &callbacks, kMTAudioProcessingTapCreationFlag_PostEffects, &tapOut) == noErr,
                   let tap = tapOut?.takeRetainedValue() else { return }
+            #endif
             let params = AVMutableAudioMixInputParameters(track: track)
             params.audioTapProcessor = tap
             let mix = AVMutableAudioMix()
