@@ -1731,6 +1731,8 @@ jobs:
           import kotlinx.coroutines.flow.StateFlow
           import kotlinx.coroutines.flow.asStateFlow
           import kotlinx.serialization.Serializable
+          import kotlinx.serialization.decodeFromString
+          import kotlinx.serialization.encodeToString
           import java.io.File
 
           /** An album or playlist pinned to the top of Home. */
