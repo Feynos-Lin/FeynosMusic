@@ -99,6 +99,7 @@ private struct Controls: View {
     @EnvironmentObject var player: Player
     @EnvironmentObject var settings: AppSettings
     @EnvironmentObject var store: Store
+    @State private var fullVisualizer = false
 
     var body: some View {
         let liked = store.isStarred(song.id, song.starred)
@@ -130,6 +131,14 @@ private struct Controls: View {
             } label: {
                 Image(systemName: "waveform").foregroundStyle(settings.visualizer == "off" ? Color.primary : Color.accentColor)
             }
+            Button { fullVisualizer = true } label: { Image(systemName: "arrow.up.left.and.arrow.down.right") }
+        }
+        .fullScreenCover(isPresented: $fullVisualizer) {
+            FullScreenVisualizer()
+                .environmentObject(player)
+                .environmentObject(settings)
+                .environmentObject(store)
+                .environmentObject(Covers.shared)
         }
     }
 }

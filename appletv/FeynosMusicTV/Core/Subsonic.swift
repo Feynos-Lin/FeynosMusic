@@ -58,13 +58,35 @@ final class Subsonic {
             let creds = Creds(server: c, user: user.trimmingCharacters(in: .whitespaces), token: token, salt: salt)
             do {
                 try await call("ping", creds: creds)
-                s.addProfile(name: profileName, server: creds.server, user: creds.user, token: token, salt: salt)
+                let linked = await listenBrainzLinked(server: creds.server, user: creds.user, password: password)
+                s.addProfile(name: profileName, server: creds.server, user: creds.user, token: token, salt: salt, serverLbLinked: linked)
                 return
             } catch {
                 last = error
             }
         }
         throw last
+    }
+
+    /// Asks Navidrome whether this account has ListenBrainz linked (Settings > Personal in its web
+    /// page). Navidrome only answers yes or no, it never hands out the token. Needs the password,
+    /// so it can only be checked while signing in.
+    func listenBrainzLinked(server: String, user: String, password: String) async -> Bool {
+        guard let loginUrl = URL(string: "\(server)/auth/login"), let linkUrl = URL(string: "\(server)/api/listenbrainz/link") else { return false }
+        var req = URLRequest(url: loginUrl)
+        req.httpMethod = "POST"
+        req.timeoutInterval = 15
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["username": user, "password": password])
+        guard let res = try? await URLSession.shared.data(for: req),
+              let json = try? JSONSerialization.jsonObject(with: res.0) as? [String: Any],
+              let jwt = json["token"] as? String else { return false }
+        var link = URLRequest(url: linkUrl)
+        link.timeoutInterval = 15
+        link.setValue("Bearer \(jwt)", forHTTPHeaderField: "X-ND-Authorization")
+        guard let lres = try? await URLSession.shared.data(for: link),
+              let ljson = try? JSONSerialization.jsonObject(with: lres.0) as? [String: Any] else { return false }
+        return ljson["status"] as? Bool == true
     }
 
     // ---- Browsing ----

@@ -29,6 +29,14 @@ final class ListenBrainz {
         return r?["user_name"] as? String
     }
 
+    /// The user name as ListenBrainz spells it, or nil if there's no such user. No token needed.
+    func userExists(_ name: String) async throws -> String? {
+        let clean = name.trimmingCharacters(in: .whitespaces)
+        guard !clean.isEmpty else { return nil }
+        guard let r = try await get("/1/user/\(clean.pathEncoded)/listen-count", token: "") else { return nil }
+        return r["payload"] != nil ? clean : nil
+    }
+
     func submit(_ body: Data) async -> Bool {
         guard !s.lbToken.isEmpty, let u = URL(string: base + "/1/submit-listens") else { return false }
         var req = URLRequest(url: u)

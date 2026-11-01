@@ -13,6 +13,11 @@ struct Profile: Codable, Identifiable, Hashable {
     var lbToken = ""
     var lbUser = ""
     var lastMixGen: Double = 0
+    /// ListenBrainz through the account linked on the Navidrome server: only the user name is
+    /// stored, and Navidrome sends the listens. (Optional so older saved profiles still load.)
+    var lbViaServer: Bool? = nil
+    /// Whether this Navidrome account had ListenBrainz linked when it signed in.
+    var serverLbLinked: Bool? = nil
 
     var host: String { URL(string: serverUrl)?.host ?? serverUrl }
 }
@@ -37,6 +42,8 @@ final class AppSettings: ObservableObject {
     @Published var lbToken: String = "" { didSet { update { $0.lbToken = lbToken } } }
     @Published var lbUser: String = "" { didSet { update { $0.lbUser = lbUser } } }
     @Published var lastMixGen: Double = 0 { didSet { update { $0.lastMixGen = lastMixGen } } }
+    @Published var lbViaServer = false { didSet { update { $0.lbViaServer = lbViaServer } } }
+    @Published var serverLbLinked = false { didSet { update { $0.serverLbLinked = serverLbLinked } } }
 
     // Shared by all profiles.
     @Published var scrobbleNavidrome: Bool { didSet { d.set(scrobbleNavidrome, forKey: "scrobbleNd") } }
@@ -86,7 +93,7 @@ final class AppSettings: ObservableObject {
     }
 
     var loggedIn: Bool { !serverUrl.isEmpty && !username.isEmpty && !token.isEmpty }
-    var lbConnected: Bool { !lbToken.isEmpty && !lbUser.isEmpty }
+    var lbConnected: Bool { !lbUser.isEmpty && (!lbToken.isEmpty || lbViaServer) }
     var current: Profile? { profiles.first { $0.id == currentId } }
 
     private func saveProfiles() {
@@ -109,6 +116,8 @@ final class AppSettings: ObservableObject {
         lbToken = p.lbToken
         lbUser = p.lbUser
         lastMixGen = p.lastMixGen
+        lbViaServer = p.lbViaServer ?? false
+        serverLbLinked = p.serverLbLinked ?? false
         applying = false
         d.set(p.id, forKey: "currentProfile")
     }
@@ -116,7 +125,7 @@ final class AppSettings: ObservableObject {
     private func clearCurrent() {
         applying = true
         currentId = ""
-        serverUrl = ""; username = ""; token = ""; salt = ""; lbToken = ""; lbUser = ""; lastMixGen = 0
+        serverUrl = ""; username = ""; token = ""; salt = ""; lbToken = ""; lbUser = ""; lastMixGen = 0; lbViaServer = false; serverLbLinked = false
         applying = false
         d.removeObject(forKey: "currentProfile")
     }
@@ -138,9 +147,10 @@ final class AppSettings: ObservableObject {
         }
     }
 
-    func addProfile(name: String, server: String, user: String, token: String, salt: String) {
+    func addProfile(name: String, server: String, user: String, token: String, salt: String, serverLbLinked: Bool = false) {
         let clean = name.trimmingCharacters(in: .whitespaces)
-        let p = Profile(name: clean.isEmpty ? user : clean, serverUrl: server, username: user, token: token, salt: salt)
+        var p = Profile(name: clean.isEmpty ? user : clean, serverUrl: server, username: user, token: token, salt: salt)
+        p.serverLbLinked = serverLbLinked
         profiles.append(p)
         saveProfiles()
         switchTo(p.id)

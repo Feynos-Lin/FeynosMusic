@@ -7,6 +7,7 @@ struct SettingsView: View {
     @EnvironmentObject var store: Store
     @EnvironmentObject var jam: JamHost
     @State var lbToken = ""
+    @State var lbName = ""
     @State var lbBusy = false
     @State var confirmSignOut = false
 
@@ -44,26 +45,69 @@ struct SettingsView: View {
                 Section {
                     if settings.lbConnected {
                         LabeledContent("Connected as", value: settings.lbUser)
-                        Toggle("Send listens to ListenBrainz", isOn: $settings.scrobbleLb)
-                        if !store.lbQueue.isEmpty {
-                            Button("Upload \(store.lbQueue.count) waiting listens") { Task { await store.flushListens() } }
+                        if settings.lbViaServer {
+                            Text("Listens are sent to ListenBrainz by your Navidrome server. Keep \"Scrobble to Navidrome\" on.")
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Toggle("Send listens to ListenBrainz", isOn: $settings.scrobbleLb)
+                            if settings.serverLbLinked && settings.scrobbleLb && settings.scrobbleNavidrome {
+                                Text("Your Navidrome account also sends listens to ListenBrainz, so songs may be counted twice. Turn this off, or turn off \"Scrobble to Navidrome\".")
+                                    .foregroundStyle(.orange)
+                            }
+                            if !store.lbQueue.isEmpty {
+                                Button("Upload \(store.lbQueue.count) waiting listens") { Task { await store.flushListens() } }
+                            }
                         }
                         Button("Disconnect ListenBrainz", role: .destructive) {
                             settings.lbToken = ""
                             settings.lbUser = ""
+                            settings.lbViaServer = false
                         }
                     } else {
-                        TextField("User token from listenbrainz.org/settings", text: $lbToken)
+                        if settings.serverLbLinked {
+                            Text("Your Navidrome account is linked to ListenBrainz, so just enter your ListenBrainz user name. No token needed.")
+                                .foregroundStyle(.secondary)
+                        }
+                        TextField("ListenBrainz user name", text: $lbName)
                             .autocorrectionDisabled()
-                        Button(lbBusy ? "Checking…" : "Connect") {
+                            .textInputAutocapitalization(.never)
+                        Button(lbBusy ? "Checking…" : "Use My Navidrome Server's Link") {
+                            Task {
+                                lbBusy = true
+                                defer { lbBusy = false }
+                                do {
+                                    if let user = try await ListenBrainz.shared.userExists(lbName) {
+                                        settings.lbToken = ""
+                                        settings.lbViaServer = true
+                                        settings.lbUser = user
+                                        settings.scrobbleNavidrome = true
+                                        lbName = ""
+                                        toast("Connected to ListenBrainz as \(user)")
+                                        Task { await mixes.generate(quiet: true) }
+                                    } else {
+                                        toast("There's no ListenBrainz user called \(lbName)")
+                                    }
+                                } catch {
+                                    toast("Couldn't reach ListenBrainz: \(error.localizedDescription)")
+                                }
+                            }
+                        }
+                        .disabled(lbName.trimmingCharacters(in: .whitespaces).isEmpty || lbBusy)
+
+                        TextField("Or a user token from listenbrainz.org/settings", text: $lbToken)
+                            .autocorrectionDisabled()
+                        Button(lbBusy ? "Checking…" : "Connect With Token") {
                             Task {
                                 lbBusy = true
                                 defer { lbBusy = false }
                                 do {
                                     if let user = try await ListenBrainz.shared.validate(lbToken) {
+                                        settings.lbViaServer = false
                                         settings.lbToken = lbToken.trimmingCharacters(in: .whitespaces)
                                         settings.lbUser = user
                                         lbToken = ""
+                                        // Avoid counting songs twice when Navidrome sends them too.
+                                        if settings.serverLbLinked && settings.scrobbleNavidrome { settings.scrobbleLb = false }
                                         toast("Connected to ListenBrainz as \(user)")
                                         Task { await mixes.generate(quiet: true) }
                                     } else {
@@ -79,7 +123,7 @@ struct SettingsView: View {
                 } header: {
                     Text("ListenBrainz")
                 } footer: {
-                    Text("Keeps your listening history in your MusicBrainz account and unlocks weekly Jams and Exploration playlists. Tip: use the Apple TV Remote on your phone to paste the token.")
+                    Text("Keeps your listening history in your MusicBrainz account and unlocks weekly Jams and Exploration playlists. If ListenBrainz is linked in your Navidrome web page (Settings > Personal), the user name is all this TV needs. Otherwise use a token; the Apple TV Remote on your phone can paste it.")
                 }
 
                 Section("Scrobbling") {

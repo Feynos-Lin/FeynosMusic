@@ -20,6 +20,8 @@ final class Player: ObservableObject {
     @Published private(set) var startedCount = 0
 
     private let av = AVPlayer()
+    /// The exact playback time, for things that need more than `position`'s twice-a-second updates.
+    var exactTime: Double { av.currentTime().seconds }
     private var unshuffled: [Song]?
     private var timeObserver: Any?
     private var statusObservation: NSKeyValueObservation?
