@@ -10,6 +10,7 @@
 		0829776F978455D752612799 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7621D4A1DE21CCDF40A3F7F /* Models.swift */; };
 		19AE9C3B71A2C7865BA74A0A /* VisualizerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E633F3049DF37CBA1B7CE111 /* VisualizerView.swift */; };
 		26945BEFCAE116E8C51AEB2D /* NowPlayingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2398AA60C376EEF46EA46B18 /* NowPlayingView.swift */; };
+		308A2D9F7BBA6229D266768B /* AudioAnalysis.swift in Sources */ = {isa = PBXBuildFile; fileRef = F910FFEDF6A021255F0489BC /* AudioAnalysis.swift */; };
 		327EA1DE3D4557FE459BDD2B /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A19316A6EB309A2417FE16D1 /* SettingsView.swift */; };
 		548EFB77EF97F82A371FCA7D /* JamHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 655098CFD047D3D9E578A51A /* JamHost.swift */; };
 		6E72FE30363B4FC7B2A6DFF1 /* ListenBrainz.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65B639BE21E88E7DAF818108 /* ListenBrainz.swift */; };
@@ -50,6 +51,7 @@
 		E5F35FE94CC68F628BBCAE55 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		E633F3049DF37CBA1B7CE111 /* VisualizerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisualizerView.swift; sourceTree = "<group>"; };
 		E8A975A51CD9FC16ADE4BE9F /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
+		F910FFEDF6A021255F0489BC /* AudioAnalysis.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioAnalysis.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -64,6 +66,7 @@
 		8AF8AB0C9612064687B1DEF0 /* Core */ = {
 			isa = PBXGroup;
 			children = (
+				F910FFEDF6A021255F0489BC /* AudioAnalysis.swift */,
 				37CBE35FCF5BE0CC024B1BA1 /* AudioTap.swift */,
 				655098CFD047D3D9E578A51A /* JamHost.swift */,
 				65B639BE21E88E7DAF818108 /* ListenBrainz.swift */,
@@ -184,6 +187,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				C9A4F9124B097C06A49D1F4E /* AppRoot.swift in Sources */,
+				308A2D9F7BBA6229D266768B /* AudioAnalysis.swift in Sources */,
 				DBED2574681261B0D6CFC3BB /* AudioTap.swift in Sources */,
 				71D8D5D8269691A88982672D /* Components.swift in Sources */,
 				DF81905EB4AFEAFF4BB5FF48 /* DetailScreens.swift in Sources */,
