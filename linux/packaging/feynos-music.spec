@@ -33,7 +33,7 @@ cat > %{buildroot}/usr/share/applications/feynos-music.desktop <<DESKTOP
 [Desktop Entry]
 Name=Feynos Music
 Comment=Navidrome music player with ListenBrainz history, weekly mixes and jams
-Exec=/usr/lib/feynos-music/feynos-music %U
+Exec=/usr/lib/feynos-music/feynos-music %%U
 Terminal=false
 Type=Application
 Icon=feynos-music
