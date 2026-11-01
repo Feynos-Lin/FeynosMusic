@@ -157,7 +157,9 @@ struct SearchView: View {
                 }
                 try? await Task.sleep(nanoseconds: 350_000_000)
                 if Task.isCancelled { return }
-                result = (try? await Subsonic.shared.search(q)) ?? SearchResult()
+                var r = (try? await Subsonic.shared.search(q)) ?? SearchResult()
+                r.artist = await ArtistGroups.tidySearch(r.artist ?? [], query: q, limit: 10)
+                result = r
             }
             .withRoutes()
         }

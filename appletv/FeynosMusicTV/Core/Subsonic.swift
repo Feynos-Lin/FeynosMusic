@@ -134,7 +134,7 @@ final class Subsonic {
     }
 
     func search(_ q: String) async throws -> SearchResult {
-        try await call("search3", [("query", q), ("artistCount", "10"), ("albumCount", "20"), ("songCount", "50")]).searchResult3
+        try await call("search3", [("query", q), ("artistCount", "40"), ("albumCount", "20"), ("songCount", "50")]).searchResult3
             ?? SearchResult()
     }
 

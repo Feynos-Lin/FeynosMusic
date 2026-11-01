@@ -298,7 +298,8 @@ const UI = {
       const genres = (await API.genres().catch(() => [])).sort((a, b) => (b.songCount || 0) - (a.songCount || 0));
       body = `<h2>Browse genres</h2><div class="grid">${genres.map((g) => `<div class="genre" style="background:linear-gradient(135deg, ${colorFor(g.value)}, #0e0e12)" data-act="go-genre" data-name="${esc(g.value)}">${esc(g.value)}<span>${g.songCount || 0} songs</span></div>`).join('')}</div>`;
     } else {
-      const r = await API.search(q.trim());
+      const r = await API.search(q.trim(), 50, 40);
+      r.artist = await ArtistGroups.tidySearch(r.artist, q.trim(), 10);
       body = (!r.song.length && !r.album.length && !r.artist.length) ? `<div class="empty">Nothing in your library matches "${esc(q)}".</div>` : `
         ${r.artist.length ? `<h2>Artists</h2><div class="row">${r.artist.map((a) => this.artistCard(a)).join('')}</div>` : ''}
         ${r.album.length ? `<h2>Albums</h2><div class="row">${r.album.map((a) => this.albumCard(a)).join('')}</div>` : ''}

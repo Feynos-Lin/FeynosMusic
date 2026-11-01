@@ -636,6 +636,8 @@ jobs:
               }
 
               @Volatile private var members: Map<String, List<Artist>> = emptyMap()
+              @Volatile private var mainOf: Map<String, Artist> = emptyMap()
+              @Volatile private var all: List<Artist> = emptyList()
 
               /** Main artists only, each with the combined entries that belong to it remembered for its page. */
               fun group(all: List<Artist>): List<Artist> {
@@ -649,10 +651,34 @@ jobs:
                       } else true
                   }
                   members = found
+                  val byId = all.associateBy { it.id }
+                  mainOf = found.flatMap { (mainId, list) -> list.mapNotNull { m -> byId[mainId]?.let { m.id to it } } }.toMap()
+                  this.all = all
                   return shown.map { a ->
                       val extra = found[a.id].orEmpty()
                       if (extra.isEmpty()) a else a.copy(albumCount = a.albumCount + extra.sumOf { it.albumCount })
                   }
+              }
+
+              /**
+               * Cleans up artist search results: combined entries are swapped for their main artist, the
+               * artist whose name matches the search best comes first, and duplicates are removed.
+               */
+              suspend fun tidySearch(found: List<Artist>, query: String, api: SubsonicClient, limit: Int): List<Artist> {
+                  if (all.isEmpty()) runCatching { group(api.artists()) }
+                  val q = key(query)
+                  val exact = all.filter { key(it.name) == q && mainOf[it.id] == null }
+                  val out = LinkedHashMap<String, Artist>()
+                  (exact + found.map { mainOf[it.id] ?: it }).forEach { out.putIfAbsent(it.id, it) }
+                  return out.values.sortedBy { a ->
+                      val k = key(a.name)
+                      when {
+                          k == q -> 0
+                          k.startsWith(q) -> 1
+                          k.contains(q) -> 2
+                          else -> 3
+                      }
+                  }.take(limit)
               }
 
               /** The combined entries filed under this artist (loads the artist list if needed). */
@@ -7028,7 +7054,8 @@ jobs:
                   delay(300)
                   loading = true
                   try {
-                      result = graph.api.search(query.trim(), 8, 20, 50)
+                      val raw = graph.api.search(query.trim(), 40, 20, 50)
+                      result = raw.copy(artist = com.feynos.music.data.ArtistGroups.tidySearch(raw.artist, query.trim(), graph.api, 8))
                       error = null
                   } catch (e: CancellationException) {
                       throw e

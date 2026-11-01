@@ -369,8 +369,8 @@ const API = {
     if (genre) p.push(['genre', genre]);
     return this.list((await this.call('getRandomSongs', p)).randomSongs?.song);
   },
-  async search(q, songCount = 50) {
-    const r = (await this.call('search3', [['query', q], ['artistCount', 10], ['albumCount', 20], ['songCount', songCount]])).searchResult3 || {};
+  async search(q, songCount = 50, artistCount = 10) {
+    const r = (await this.call('search3', [['query', q], ['artistCount', artistCount], ['albumCount', 20], ['songCount', songCount]])).searchResult3 || {};
     return { artist: this.list(r.artist), album: this.list(r.album), song: this.list(r.song) };
   },
   async genres() {
@@ -469,6 +469,8 @@ function artUrl(coverArt, albumId, size = 300) {
 const ArtistGroups = {
   splitter: /\s*(?:,|&|\+|\/|;|\s(?:feat\.?|ft\.?|featuring|vs\.?|x|with|and)\s)\s*/i,
   members: null, // main artist id -> [combined entries]
+  mainOf: new Map(), // combined entry id -> main artist
+  all: [],
   key(name) {
     return String(name || '').trim().toLowerCase().replace(/\s+/g, ' ');
   },
@@ -492,7 +494,30 @@ const ArtistGroups = {
       return true;
     });
     this.members = found;
+    const byId = new Map(all.map((a) => [a.id, a]));
+    this.mainOf = new Map();
+    for (const [mainId, list] of found) for (const m of list) this.mainOf.set(m.id, byId.get(mainId));
+    this.all = all;
     return shown.map((a) => (found.has(a.id) ? { ...a, albumCount: (a.albumCount || 0) + found.get(a.id).reduce((n, m) => n + (m.albumCount || 0), 0) } : a));
+  },
+  /** Cleans up artist search results: combined entries become their main artist, the best match comes first, no duplicates. */
+  async tidySearch(found, query, limit) {
+    if (!this.members) {
+      try {
+        this.group(await API.artists());
+      } catch (e) {
+        /* use the results as they are */
+      }
+    }
+    const q = this.key(query);
+    const exact = this.all.filter((a) => this.key(a.name) === q && !this.mainOf.has(a.id));
+    const out = new Map();
+    for (const a of [...exact, ...found.map((a) => this.mainOf.get(a.id) || a)]) if (!out.has(a.id)) out.set(a.id, a);
+    const rank = (a) => {
+      const k = this.key(a.name);
+      return k === q ? 0 : k.startsWith(q) ? 1 : k.includes(q) ? 2 : 3;
+    };
+    return [...out.values()].sort((a, b) => rank(a) - rank(b)).slice(0, limit);
   },
   async membersOf(artist) {
     if (!this.members) {
