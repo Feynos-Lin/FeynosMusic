@@ -22,6 +22,7 @@
 		8B8D94618196E77E2D2F9B58 /* Store.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D585207336A60248C41C733 /* Store.swift */; };
 		93264D7A468BF8C566DA043A /* Player.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FBE0558DA60FBC2DC734126 /* Player.swift */; };
 		A30A6D9E2F1F6649DA02C4C0 /* Subsonic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A199FD2872D4BD51ACFFA76 /* Subsonic.swift */; };
+		C35533F1379348A7C5E9D53D /* ArtistGroups.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D97F4715321E49588AA3BC6 /* ArtistGroups.swift */; };
 		C9A4F9124B097C06A49D1F4E /* AppRoot.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3D3C465C386C8591905A8EB /* AppRoot.swift */; };
 		DBED2574681261B0D6CFC3BB /* AudioTap.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37CBE35FCF5BE0CC024B1BA1 /* AudioTap.swift */; };
 		DF81905EB4AFEAFF4BB5FF48 /* DetailScreens.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21216718E9AE4EC7E19A3DE0 /* DetailScreens.swift */; };
@@ -31,6 +32,7 @@
 
 /* Begin PBXFileReference section */
 		0A199FD2872D4BD51ACFFA76 /* Subsonic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Subsonic.swift; sourceTree = "<group>"; };
+		1D97F4715321E49588AA3BC6 /* ArtistGroups.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtistGroups.swift; sourceTree = "<group>"; };
 		21216718E9AE4EC7E19A3DE0 /* DetailScreens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetailScreens.swift; sourceTree = "<group>"; };
 		224012A3A66DF228E90C7095 /* Smart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Smart.swift; sourceTree = "<group>"; };
 		2398AA60C376EEF46EA46B18 /* NowPlayingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NowPlayingView.swift; sourceTree = "<group>"; };
@@ -66,6 +68,7 @@
 		8AF8AB0C9612064687B1DEF0 /* Core */ = {
 			isa = PBXGroup;
 			children = (
+				1D97F4715321E49588AA3BC6 /* ArtistGroups.swift */,
 				F910FFEDF6A021255F0489BC /* AudioAnalysis.swift */,
 				37CBE35FCF5BE0CC024B1BA1 /* AudioTap.swift */,
 				655098CFD047D3D9E578A51A /* JamHost.swift */,
@@ -187,6 +190,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				C9A4F9124B097C06A49D1F4E /* AppRoot.swift in Sources */,
+				C35533F1379348A7C5E9D53D /* ArtistGroups.swift in Sources */,
 				308A2D9F7BBA6229D266768B /* AudioAnalysis.swift in Sources */,
 				DBED2574681261B0D6CFC3BB /* AudioTap.swift in Sources */,
 				71D8D5D8269691A88982672D /* Components.swift in Sources */,
