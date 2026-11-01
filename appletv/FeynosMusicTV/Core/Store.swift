@@ -9,6 +9,8 @@ final class Store: ObservableObject {
     @Published var mixes: [Mix]
     @Published private(set) var covers: [String: CoverEntry]
     @Published var starOverrides: [String: Bool] = [:]
+    /// Albums and playlists pinned to the top of Home, newest first.
+    @Published private(set) var pins: [Pin]
     /// Bumped whenever playlists or mixes change, so screens reload.
     @Published var version = 0
 
@@ -20,7 +22,7 @@ final class Store: ObservableObject {
         let at: Date
     }
 
-    private static let fileNames = ["plays", "mixes", "covers", "lbqueue", "matches"]
+    private static let fileNames = ["plays", "mixes", "covers", "lbqueue", "matches", "pins"]
 
     /// Each profile keeps its own files, e.g. "plays-<profile id>.json".
     private static func file(_ base: String) -> String {
@@ -44,6 +46,7 @@ final class Store: ObservableObject {
         covers = Disk.load([String: CoverEntry].self, Store.file("covers")) ?? [:]
         lbQueue = Disk.load([Data].self, Store.file("lbqueue")) ?? []
         matchCache = Disk.load([String: MatchEntry].self, Store.file("matches")) ?? [:]
+        pins = Disk.load([Pin].self, Store.file("pins")) ?? []
     }
 
     /// Loads the current profile's data (after switching profiles).
@@ -53,11 +56,42 @@ final class Store: ObservableObject {
         covers = Disk.load([String: CoverEntry].self, Store.file("covers")) ?? [:]
         lbQueue = Disk.load([Data].self, Store.file("lbqueue")) ?? []
         matchCache = Disk.load([String: MatchEntry].self, Store.file("matches")) ?? [:]
+        pins = Disk.load([Pin].self, Store.file("pins")) ?? []
         starOverrides = [:]
         bump()
     }
 
     func bump() { version += 1 }
+
+    // ---- Pins ----
+
+    func isPinned(_ id: String) -> Bool { pins.contains { $0.id == id } }
+
+    /// Pins or unpins; returns true when it is now pinned.
+    @discardableResult
+    func togglePin(_ pin: Pin) -> Bool {
+        let now: Bool
+        if isPinned(pin.id) {
+            pins.removeAll { $0.id == pin.id }
+            now = false
+        } else {
+            pins.insert(pin, at: 0)
+            now = true
+        }
+        Disk.save(pins, Store.file("pins"))
+        return now
+    }
+
+    func unpin(_ id: String) {
+        pins.removeAll { $0.id == id }
+        Disk.save(pins, Store.file("pins"))
+    }
+
+    func movePin(_ id: String, by: Int) {
+        guard let i = pins.firstIndex(where: { $0.id == id }), pins.indices.contains(i + by) else { return }
+        pins.swapAt(i, i + by)
+        Disk.save(pins, Store.file("pins"))
+    }
 
     // ---- History ----
 
@@ -178,4 +212,13 @@ final class Store: ObservableObject {
         covers = entries
         Disk.save(covers, Store.file("covers"))
     }
+}
+
+/// An album or playlist pinned to the top of Home.
+struct Pin: Codable, Identifiable, Hashable {
+    let kind: String // "album" or "playlist"
+    let id: String
+    let name: String
+    var subtitle: String = ""
+    var coverArt: String?
 }

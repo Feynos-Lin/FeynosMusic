@@ -37,6 +37,9 @@ struct HomeView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 30) {
                         Text(greeting).font(.largeTitle).bold().padding(.leading, 8)
+                        if !store.pins.isEmpty {
+                            Shelf(title: "Pinned") { ForEach(store.pins) { PinCard(pin: $0) } }
+                        }
                         if !store.mixes.isEmpty {
                             Shelf(title: "Made for you") { ForEach(store.mixes) { MixCard(mix: $0) } }
                         }

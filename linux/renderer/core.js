@@ -531,6 +531,36 @@ const ArtistGroups = {
   },
 };
 
+/** Albums and playlists pinned to the top of Home (kept on this computer, newest first). */
+const Pins = {
+  list() {
+    return DB.get('pins', []);
+  },
+  has(id) {
+    return this.list().some((p) => p.id === id);
+  },
+  /** Pins or unpins; returns true when it is now pinned. */
+  toggle(pin) {
+    const l = this.list();
+    if (l.some((p) => p.id === pin.id)) {
+      DB.set('pins', l.filter((p) => p.id !== pin.id));
+      return false;
+    }
+    DB.set('pins', [pin, ...l]);
+    return true;
+  },
+  remove(id) {
+    DB.set('pins', this.list().filter((p) => p.id !== id));
+  },
+  move(id, by) {
+    const l = this.list();
+    const i = l.findIndex((p) => p.id === id), j = i + by;
+    if (i < 0 || j < 0 || j >= l.length) return;
+    l.splice(j, 0, l.splice(i, 1)[0]);
+    DB.set('pins', l);
+  },
+};
+
 const LB = {
   base: 'https://api.listenbrainz.org',
 

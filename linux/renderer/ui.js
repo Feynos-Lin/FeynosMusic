@@ -29,6 +29,7 @@ const ICON = {
   down: svg('M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z'),
   radio: svg('M7.76 16.24C6.67 15.16 6 13.66 6 12s.67-3.16 1.76-4.24l1.42 1.42C8.45 9.9 8 10.9 8 12c0 1.1.45 2.1 1.17 2.83l-1.41 1.41zm8.48 0C17.33 15.16 18 13.66 18 12s-.67-3.16-1.76-4.24l-1.42 1.42C15.55 9.9 16 10.9 16 12c0 1.1-.45 2.1-1.17 2.83l1.41 1.41zM12 10c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm8 2c0 2.21-.9 4.21-2.35 5.65l1.42 1.42C20.88 17.26 22 14.76 22 12s-1.12-5.26-2.93-7.07l-1.42 1.42A7.94 7.94 0 0 1 20 12zM6.35 6.35L4.93 4.93C3.12 6.74 2 9.24 2 12s1.12 5.26 2.93 7.07l1.42-1.42C4.9 16.21 4 14.21 4 12s.9-4.21 2.35-5.65z'),
   plus: svg('M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z'),
+  pin: svg('M16 9V4h1c.55 0 1-.45 1-1s-.45-1-1-1H7c-.55 0-1 .45-1 1s.45 1 1 1h1v5c0 1.66-1.34 3-3 3v2h5.97v7l1 1 1-1v-7H19v-2c-1.66 0-3-1.34-3-3z'),
   image: svg('M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z'),
   wave: svg('M7 18h2V6H7v12zm4 4h2V2h-2v20zm-8-8h2v-4H3v4zm12 4h2V6h-2v12zm4-8v4h2v-4h-2z'),
   note: svg('M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z'),
@@ -204,6 +205,21 @@ const UI = {
     document.querySelectorAll('.song, .pick').forEach((r) => r.classList.toggle('cur', !!cur && r.dataset.id === cur.id));
   },
 
+  /** The "Pinned" row at the top of Home. */
+  pinnedRow() {
+    const pins = Pins.list();
+    if (!pins.length) return '';
+    return `<h2>Pinned</h2><div class="row">${pins.map((p, i) => `<div class="card pinned" data-act="${p.kind === 'playlist' ? 'go-playlist' : 'go-album'}" data-id="${esc(p.id)}">
+      ${img(p.coverArt, p.kind === 'album' ? p.id : null, 300)}<div class="t">${esc(p.name)}</div><div class="s">${esc(p.subtitle || (p.kind === 'playlist' ? 'Playlist' : 'Album'))}</div>
+      <div class="pinctl">${i ? `<button class="iconbtn" data-act="pin-move" data-id="${esc(p.id)}" data-by="-1" title="Move left">←</button>` : ''}${i < pins.length - 1 ? `<button class="iconbtn" data-act="pin-move" data-id="${esc(p.id)}" data-by="1" title="Move right">→</button>` : ''}<button class="iconbtn" data-act="pin-remove" data-id="${esc(p.id)}" title="Unpin">${ICON.close}</button></div></div>`).join('')}</div>`;
+  },
+  /** Pin / unpin button for album and playlist pages. */
+  pinButton(pin) {
+    this.pinCurrent = pin;
+    const on = Pins.has(pin.id);
+    return `<button class="iconbtn ${on ? 'on' : ''}" data-act="pin-toggle" title="${on ? 'Unpin from Home' : 'Pin to Home'}">${ICON.pin}</button>`;
+  },
+
   albumCard(a) {
     return `<div class="card" data-act="go-album" data-id="${esc(a.id)}">${img(a.coverArt, a.id, 300)}<div class="t">${esc(a.name)}</div><div class="s">${esc(a.artist || '')}${a.year ? ' · ' + a.year : ''}</div></div>`;
   },
@@ -259,7 +275,7 @@ const UI = {
     if (layout === 'apple') return this.appleHome({ recent, newest, frequent, starred, random, jump, jumpKey, shelf });
     if (layout === 'youtube') return this.youtubeHome({ recent, newest, frequent, starred, random, jump, jumpKey, shelf });
     const chips = layout === 'spotify' ? `<div class="chips"><div class="chip on">Music</div><div class="chip" data-act="nav" data-route="foryou">Made for you</div><div class="chip" data-act="nav" data-route="liked">Liked</div><div class="chip" data-act="nav" data-route="history">Recently played</div><div class="chip" data-act="nav" data-route="stats">Stats</div></div>` : '';
-    return `<h1>${greet}</h1>${chips}<div class="quick">${quick.join('')}</div>
+    return `<h1>${greet}</h1>${chips}${this.pinnedRow()}<div class="quick">${quick.join('')}</div>
       ${Store.mixes.length ? `<h2>Made for you<span class="see" data-act="nav" data-route="foryou">See all</span></h2><div class="row">${Store.mixes.map((m) => this.mixCard(m)).join('')}</div>` : ''}
       ${jump.length ? `<h2>Jump back in<span class="see" data-act="nav" data-route="history">See all</span></h2><div class="row">${jump.map((s, i) => `<div class="card" data-act="play-song" data-list="${jumpKey}" data-i="${i}" data-menu="1">${img(s.coverArt, s.albumId, 300)}<div class="t">${esc(s.title)}</div><div class="s">${esc(s.artist || '')}</div></div>`).join('')}</div>` : ''}
       ${shelf('Recently played albums', recent, 'recent')}${shelf('Recently added', newest, 'newest')}${shelf('Your most played', frequent, 'frequent')}${shelf('Liked albums', starred, 'starred')}${shelf('Something different', random, 'random')}`;
@@ -268,7 +284,7 @@ const UI = {
   /** Apple Music-style Listen Now. */
   appleHome(d) {
     const top = Store.mixes.map((m) => `<div class="toppick" data-act="go-mix" data-id="${esc(m.id)}"><div class="lbl">MADE FOR YOU</div><div class="tp">${this.mixArt(m)}<div class="desc">${esc(m.description)}</div></div></div>`).join('');
-    return `<h1>Listen Now</h1>
+    return `<h1>Listen Now</h1>${this.pinnedRow()}
       ${top ? `<h2>Top Picks for You<span class="see" data-act="nav" data-route="foryou">See all</span></h2><div class="row">${top}</div>` : ''}
       ${d.jump.length ? `<h2>Recently Played<span class="see" data-act="nav" data-route="history">See all</span></h2><div class="row big">${d.jump.map((s, i) => `<div class="card" data-act="play-song" data-list="${d.jumpKey}" data-i="${i}" data-menu="1">${img(s.coverArt, s.albumId, 300)}<div class="t">${esc(s.title)}</div><div class="s">${esc(s.artist || '')}</div></div>`).join('')}</div>` : ''}
       ${d.shelf('Recently Added', d.newest, 'newest')}${d.shelf('Heavy Rotation', d.frequent, 'frequent')}${d.shelf('Your Favorites', d.starred, 'starred')}${d.shelf('Discover', d.random, 'random')}`;
@@ -284,7 +300,7 @@ const UI = {
       ...d.recent.slice(0, 8).map((a) => this.albumCard(a)),
       ...d.jump.slice(0, 12).map((s, i) => `<div class="card" data-act="play-song" data-list="${d.jumpKey}" data-i="${i}" data-menu="1">${img(s.coverArt, s.albumId, 300)}<div class="t">${esc(s.title)}</div><div class="s">${esc(s.artist || '')}</div></div>`),
     ];
-    return `${genres.length ? `<div class="chips mood">${genres.map((g) => `<div class="chip" data-act="go-genre" data-name="${esc(g.value)}">${esc(g.value)}</div>`).join('')}</div>` : ''}
+    return `${genres.length ? `<div class="chips mood">${genres.map((g) => `<div class="chip" data-act="go-genre" data-name="${esc(g.value)}">${esc(g.value)}</div>`).join('')}</div>` : ''}${this.pinnedRow()}
       ${again.length ? `<h2>Listen again<span class="see" data-act="nav" data-route="history">See all</span></h2><div class="again">${again.join('')}</div>` : ''}
       ${picks.length ? `<h2>Quick picks<span class="see" data-act="play-list" data-list="${pk}">Play all</span></h2><div class="picks">${picks.map((s, i) => `<div class="pick" data-id="${esc(s.id)}" data-act="play-song" data-list="${pk}" data-i="${i}" data-menu="1">${img(s.coverArt, s.albumId, 100, '')}<div class="tt"><div>${esc(s.title)}</div><div class="muted">${esc(s.artist || '')}</div></div></div>`).join('')}</div>` : ''}
       ${Store.mixes.length ? `<h2>Mixed for you<span class="see" data-act="nav" data-route="foryou">See all</span></h2><div class="row">${Store.mixes.map((m) => this.mixCard(m)).join('')}</div>` : ''}
@@ -365,6 +381,7 @@ const UI = {
     const meta = [a.artistId ? `<span class="link" data-act="go-artist" data-id="${esc(a.artistId)}"><b>${esc(a.artist)}</b></span>` : esc(a.artist || ''), a.year, `${a.song.length} songs`, totalDuration(a.duration || 0)].filter(Boolean).join(' · ');
     return this.hero(img(a.coverArt, a.id, 600), 'Album', a.name, meta) + this.actions(key, `
       <button class="iconbtn ${starred ? 'on' : ''}" data-act="star" data-kind="album" data-id="${esc(a.id)}" data-on="${starred ? 1 : 0}" title="Like">${starred ? ICON.heartFill : ICON.heart}</button>
+      ${this.pinButton({ kind: 'album', id: a.id, name: a.name, subtitle: a.artist || '', coverArt: a.coverArt })}
       <button class="iconbtn" data-act="cover-pick" data-id="${esc(a.id)}" title="Find cover art">${ICON.image}</button>`)
       + this.songRows(a.song, { cover: false, numbers: 'track' });
   },
@@ -400,7 +417,7 @@ const UI = {
     const key = this.reg(p.entry);
     this.currentPlaylist = p;
     return this.hero(img(p.coverArt, null, 600), 'Playlist', p.name, `${esc(p.owner ? 'by ' + p.owner : '')} · ${p.entry.length} songs · ${totalDuration(p.duration || 0)}`)
-      + this.actions(key, `<button class="iconbtn" data-act="delete-playlist" data-id="${esc(p.id)}" title="Delete playlist">${ICON.trash}</button>`)
+      + this.actions(key, `${this.pinButton({ kind: 'playlist', id: p.id, name: p.name, subtitle: `Playlist · ${p.entry.length} songs`, coverArt: p.coverArt })}<button class="iconbtn" data-act="delete-playlist" data-id="${esc(p.id)}" title="Delete playlist">${ICON.trash}</button>`)
       + this.songRows(p.entry, { empty: 'This playlist is empty. Add songs with the ⋯ menu on any track.' });
   },
 
@@ -1082,6 +1099,22 @@ const UI = {
         }
         break;
       case 'modal-close': this.closeModal(); break;
+      case 'pin-toggle':
+        if (this.pinCurrent) {
+          const on = Pins.toggle(this.pinCurrent);
+          el.classList.toggle('on', on);
+          el.title = on ? 'Unpin from Home' : 'Pin to Home';
+          toast(on ? 'Pinned to Home' : 'Unpinned from Home');
+        }
+        break;
+      case 'pin-remove':
+        Pins.remove(d.id);
+        this.render();
+        break;
+      case 'pin-move':
+        Pins.move(d.id, Number(d.by));
+        this.render();
+        break;
       case 'vis-full': this.openFullVis(); break;
       case 'vis-full-close': this.closeFullVis(); break;
       case 'vis-full-cycle': {

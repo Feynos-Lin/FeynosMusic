@@ -264,3 +264,9 @@ body.layout-youtube .chip { border-radius: 8px; }
 #visfull.idle { cursor: none; }
 #visfull.idle .info, #visfull.idle .close { opacity: 0; }
 .np-view .left .visbox { cursor: zoom-in; }
+
+/* Pinned row on Home */
+.card.pinned { position: relative; }
+.card.pinned .pinctl { position: absolute; top: 14px; right: 14px; display: none; gap: 4px; }
+.card.pinned:hover .pinctl { display: flex; }
+.card.pinned .pinctl .iconbtn { background: #000a; border-radius: 50%; width: 30px; height: 30px; font-size: 15px; color: #fff; }

@@ -41,6 +41,7 @@ struct AlbumView: View {
                                 Image(systemName: liked ? "heart.fill" : "heart")
                             }
                             Button { Actions.addToPlaylistRequest = album.songs } label: { Image(systemName: "text.badge.plus") }
+                            PinButton(pin: Pin(kind: "album", id: album.id, name: album.title, subtitle: album.artist ?? "", coverArt: album.coverArt))
                             Button { pickCover = true } label: { Image(systemName: "photo.badge.magnifyingglass") }
                             if let artistId = album.artistId {
                                 NavigationLink(value: Route.artist(artistId)) { Image(systemName: "person.fill") }
@@ -171,7 +172,10 @@ struct PlaylistView: View {
                         meta: "Playlist · \(pl.songs.count) songs · \(totalDuration(pl.duration ?? 0))",
                         songs: pl.songs,
                         art: { CoverImage(coverArt: pl.coverArt, size: 800, placeholder: "music.note.list") },
-                        extra: { Button(role: .destructive) { confirmDelete = true } label: { Image(systemName: "trash") } })
+                        extra: {
+                            PinButton(pin: Pin(kind: "playlist", id: pl.id, name: pl.title, subtitle: "Playlist · \(pl.songs.count) songs", coverArt: pl.coverArt))
+                            Button(role: .destructive) { confirmDelete = true } label: { Image(systemName: "trash") }
+                        })
                     LazyVStack(spacing: 4) {
                         ForEach(Array(pl.songs.enumerated()), id: \.offset) { i, s in
                             SongRow(song: s) { Player.shared.play(pl.songs, start: i) }

@@ -396,3 +396,46 @@ final class AppState: ObservableObject {
     @Published var tab = 0
     @Published var addToPlaylist: [Song]?
 }
+
+/// Pin / unpin button for album and playlist pages.
+struct PinButton: View {
+    let pin: Pin
+    @EnvironmentObject var store: Store
+
+    var body: some View {
+        let pinned = store.isPinned(pin.id)
+        Button {
+            let now = store.togglePin(pin)
+            toast(now ? "Pinned to Home" : "Unpinned from Home")
+        } label: {
+            Image(systemName: pinned ? "pin.fill" : "pin").foregroundStyle(pinned ? Color.accentColor : Color.primary)
+        }
+    }
+}
+
+/// A pinned album or playlist on Home. Hold Select for Unpin and Move.
+struct PinCard: View {
+    let pin: Pin
+    @EnvironmentObject var store: Store
+
+    var body: some View {
+        NavigationLink(value: pin.kind == "playlist" ? Route.playlist(pin.id) : Route.album(pin.id)) {
+            VStack(alignment: .leading, spacing: 8) {
+                CoverImage(coverArt: pin.coverArt, albumId: pin.kind == "album" ? pin.id : nil, size: 500,
+                           placeholder: pin.kind == "playlist" ? "music.note.list" : "square.stack")
+                    .frame(width: 280, height: 280)
+                Text(pin.name).font(.caption).bold().lineLimit(1)
+                Text(pin.subtitle.isEmpty ? (pin.kind == "playlist" ? "Playlist" : "Album") : pin.subtitle)
+                    .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+            }
+            .frame(width: 280)
+            .padding(12)
+        }
+        .buttonStyle(.card)
+        .contextMenu {
+            Button("Unpin", role: .destructive) { store.unpin(pin.id) }
+            if store.pins.first?.id != pin.id { Button("Move Left") { store.movePin(pin.id, by: -1) } }
+            if store.pins.last?.id != pin.id { Button("Move Right") { store.movePin(pin.id, by: 1) } }
+        }
+    }
+}

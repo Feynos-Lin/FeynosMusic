@@ -1722,7 +1722,68 @@ jobs:
 
           data class LbPlaylistRef(val mbid: String, val title: String, val date: String?)
           FEYNOS_EOF_034
-          cat > 'app/src/main/java/com/feynos/music/data/SettingsStore.kt' <<'FEYNOS_EOF_035'
+          cat > 'app/src/main/java/com/feynos/music/data/Pins.kt' <<'FEYNOS_EOF_035'
+          package com.feynos.music.data
+
+          import android.content.Context
+          import com.feynos.music.util.AppJson
+          import kotlinx.coroutines.flow.MutableStateFlow
+          import kotlinx.coroutines.flow.StateFlow
+          import kotlinx.coroutines.flow.asStateFlow
+          import kotlinx.serialization.Serializable
+          import java.io.File
+
+          /** An album or playlist pinned to the top of Home. */
+          @Serializable
+          data class Pin(
+              val kind: String, // "album" or "playlist"
+              val id: String,
+              val name: String,
+              val subtitle: String = "",
+              val coverArt: String? = null,
+          )
+
+          /** Pinned albums and playlists, kept on this device in the order they were pinned. */
+          class Pins(context: Context) {
+              private val file = File(context.filesDir, "pins.json")
+              private val _list = MutableStateFlow(load())
+              val list: StateFlow<List<Pin>> = _list.asStateFlow()
+
+              private fun load(): List<Pin> =
+                  runCatching { AppJson.decodeFromString<List<Pin>>(file.readText()) }.getOrDefault(emptyList())
+
+              private fun save(l: List<Pin>) {
+                  _list.value = l
+                  runCatching { file.writeText(AppJson.encodeToString(l)) }
+              }
+
+              fun isPinned(id: String) = _list.value.any { it.id == id }
+
+              /** Pins or unpins; returns true when it is now pinned. */
+              fun toggle(pin: Pin): Boolean {
+                  val l = _list.value
+                  return if (l.any { it.id == pin.id }) {
+                      save(l.filterNot { it.id == pin.id })
+                      false
+                  } else {
+                      save(listOf(pin) + l)
+                      true
+                  }
+              }
+
+              fun remove(id: String) = save(_list.value.filterNot { it.id == id })
+
+              fun move(id: String, by: Int) {
+                  val l = _list.value.toMutableList()
+                  val i = l.indexOfFirst { it.id == id }
+                  val j = i + by
+                  if (i < 0 || j !in l.indices) return
+                  l.add(j, l.removeAt(i))
+                  save(l)
+              }
+          }
+          FEYNOS_EOF_035
+          cat > 'app/src/main/java/com/feynos/music/data/SettingsStore.kt' <<'FEYNOS_EOF_036'
           package com.feynos.music.data
 
           import android.content.Context
@@ -1870,8 +1931,8 @@ jobs:
                   p[kAutoCovers] = s.autoCovers
               }
           }
-          FEYNOS_EOF_035
-          cat > 'app/src/main/java/com/feynos/music/data/SubsonicClient.kt' <<'FEYNOS_EOF_036'
+          FEYNOS_EOF_036
+          cat > 'app/src/main/java/com/feynos/music/data/SubsonicClient.kt' <<'FEYNOS_EOF_037'
           package com.feynos.music.data
 
           import com.feynos.music.util.AppJson
@@ -2072,8 +2133,8 @@ jobs:
 
               fun downloadUrl(id: String): String = buildUrl("download", listOf("id" to id))
           }
-          FEYNOS_EOF_036
-          cat > 'app/src/main/java/com/feynos/music/data/TrackMatcher.kt' <<'FEYNOS_EOF_037'
+          FEYNOS_EOF_037
+          cat > 'app/src/main/java/com/feynos/music/data/TrackMatcher.kt' <<'FEYNOS_EOF_038'
           package com.feynos.music.data
 
           import kotlinx.coroutines.CancellationException
@@ -2168,8 +2229,8 @@ jobs:
                   return sc
               }
           }
-          FEYNOS_EOF_037
-          cat > 'app/src/main/java/com/feynos/music/util/Util.kt' <<'FEYNOS_EOF_038'
+          FEYNOS_EOF_038
+          cat > 'app/src/main/java/com/feynos/music/util/Util.kt' <<'FEYNOS_EOF_039'
           package com.feynos.music.util
 
           import kotlinx.serialization.json.Json
@@ -2252,12 +2313,12 @@ jobs:
           /** Navidrome album cover ids look like "al-<albumId>_<hex>". */
           fun albumIdFromCover(coverId: String?): String? =
               coverId?.takeIf { it.startsWith("al-") }?.removePrefix("al-")?.substringBefore('_')?.takeIf { it.isNotBlank() }
-          FEYNOS_EOF_038
+          FEYNOS_EOF_039
 
       - name: Write player, workers and app core
         run: |
           mkdir -p "app/src/main/java/com/feynos/music" "app/src/main/java/com/feynos/music/jam" "app/src/main/java/com/feynos/music/player" "app/src/main/java/com/feynos/music/update" "app/src/main/java/com/feynos/music/widget" "app/src/main/java/com/feynos/music/work"
-          cat > 'app/src/main/java/com/feynos/music/App.kt' <<'FEYNOS_EOF_039'
+          cat > 'app/src/main/java/com/feynos/music/App.kt' <<'FEYNOS_EOF_040'
           package com.feynos.music
 
           import android.app.Application
@@ -2279,8 +2340,8 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_039
-          cat > 'app/src/main/java/com/feynos/music/Graph.kt' <<'FEYNOS_EOF_040'
+          FEYNOS_EOF_040
+          cat > 'app/src/main/java/com/feynos/music/Graph.kt' <<'FEYNOS_EOF_041'
           package com.feynos.music
 
           import android.app.Application
@@ -2321,6 +2382,7 @@ jobs:
           class Graph(val app: Application) {
               val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
               val settings = SettingsStore(app)
+              val pins = com.feynos.music.data.Pins(app)
               val http: OkHttpClient = OkHttpClient.Builder()
                   .connectTimeout(15, TimeUnit.SECONDS)
                   .readTimeout(60, TimeUnit.SECONDS)
@@ -2598,8 +2660,8 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_040
-          cat > 'app/src/main/java/com/feynos/music/MainActivity.kt' <<'FEYNOS_EOF_041'
+          FEYNOS_EOF_041
+          cat > 'app/src/main/java/com/feynos/music/MainActivity.kt' <<'FEYNOS_EOF_042'
           package com.feynos.music
 
           import android.Manifest
@@ -2633,8 +2695,8 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_041
-          cat > 'app/src/main/java/com/feynos/music/jam/JamManager.kt' <<'FEYNOS_EOF_042'
+          FEYNOS_EOF_042
+          cat > 'app/src/main/java/com/feynos/music/jam/JamManager.kt' <<'FEYNOS_EOF_043'
           package com.feynos.music.jam
 
           import android.os.Build
@@ -3178,8 +3240,8 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_042
-          cat > 'app/src/main/java/com/feynos/music/jam/JamService.kt' <<'FEYNOS_EOF_043'
+          FEYNOS_EOF_043
+          cat > 'app/src/main/java/com/feynos/music/jam/JamService.kt' <<'FEYNOS_EOF_044'
           package com.feynos.music.jam
 
           import android.app.NotificationChannel
@@ -3302,8 +3364,8 @@ jobs:
                   super.onDestroy()
               }
           }
-          FEYNOS_EOF_043
-          cat > 'app/src/main/java/com/feynos/music/jam/WifiJam.kt' <<'FEYNOS_EOF_044'
+          FEYNOS_EOF_044
+          cat > 'app/src/main/java/com/feynos/music/jam/WifiJam.kt' <<'FEYNOS_EOF_045'
           package com.feynos.music.jam
 
           import android.content.Context
@@ -3500,8 +3562,8 @@ jobs:
                   services.clear()
               }
           }
-          FEYNOS_EOF_044
-          cat > 'app/src/main/java/com/feynos/music/player/MediaItems.kt' <<'FEYNOS_EOF_045'
+          FEYNOS_EOF_045
+          cat > 'app/src/main/java/com/feynos/music/player/MediaItems.kt' <<'FEYNOS_EOF_046'
           package com.feynos.music.player
 
           import android.content.Context
@@ -3580,8 +3642,8 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_045
-          cat > 'app/src/main/java/com/feynos/music/player/PlaybackService.kt' <<'FEYNOS_EOF_046'
+          FEYNOS_EOF_046
+          cat > 'app/src/main/java/com/feynos/music/player/PlaybackService.kt' <<'FEYNOS_EOF_047'
           package com.feynos.music.player
 
           import android.app.PendingIntent
@@ -3831,8 +3893,8 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_046
-          cat > 'app/src/main/java/com/feynos/music/player/PlayerController.kt' <<'FEYNOS_EOF_047'
+          FEYNOS_EOF_047
+          cat > 'app/src/main/java/com/feynos/music/player/PlayerController.kt' <<'FEYNOS_EOF_048'
           package com.feynos.music.player
 
           import android.content.ComponentName
@@ -4205,8 +4267,8 @@ jobs:
                   c.clearMediaItems()
               }
           }
-          FEYNOS_EOF_047
-          cat > 'app/src/main/java/com/feynos/music/player/VisualizerTap.kt' <<'FEYNOS_EOF_048'
+          FEYNOS_EOF_048
+          cat > 'app/src/main/java/com/feynos/music/player/VisualizerTap.kt' <<'FEYNOS_EOF_049'
           package com.feynos.music.player
 
           import androidx.annotation.OptIn
@@ -4354,8 +4416,8 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_048
-          cat > 'app/src/main/java/com/feynos/music/update/Updater.kt' <<'FEYNOS_EOF_049'
+          FEYNOS_EOF_049
+          cat > 'app/src/main/java/com/feynos/music/update/Updater.kt' <<'FEYNOS_EOF_050'
           package com.feynos.music.update
 
           import android.content.Context
@@ -4441,8 +4503,8 @@ jobs:
                   return true
               }
           }
-          FEYNOS_EOF_049
-          cat > 'app/src/main/java/com/feynos/music/widget/Widgets.kt' <<'FEYNOS_EOF_050'
+          FEYNOS_EOF_050
+          cat > 'app/src/main/java/com/feynos/music/widget/Widgets.kt' <<'FEYNOS_EOF_051'
           package com.feynos.music.widget
 
           import android.app.PendingIntent
@@ -4565,8 +4627,8 @@ jobs:
                   if (cover.isNotEmpty()) mgr.updateAppWidget(cover, build(context, R.layout.widget_cover, CoverWidget::class.java, 200))
               }
           }
-          FEYNOS_EOF_050
-          cat > 'app/src/main/java/com/feynos/music/work/Workers.kt' <<'FEYNOS_EOF_051'
+          FEYNOS_EOF_051
+          cat > 'app/src/main/java/com/feynos/music/work/Workers.kt' <<'FEYNOS_EOF_052'
           package com.feynos.music.work
 
           import android.content.Context
@@ -4711,12 +4773,12 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_051
+          FEYNOS_EOF_052
 
       - name: Write user interface
         run: |
           mkdir -p "app/src/main/java/com/feynos/music/ui"
-          cat > 'app/src/main/java/com/feynos/music/ui/Components.kt' <<'FEYNOS_EOF_052'
+          cat > 'app/src/main/java/com/feynos/music/ui/Components.kt' <<'FEYNOS_EOF_053'
           @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
           package com.feynos.music.ui
@@ -5190,8 +5252,8 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_052
-          cat > 'app/src/main/java/com/feynos/music/ui/CoverArtScreens.kt' <<'FEYNOS_EOF_053'
+          FEYNOS_EOF_053
+          cat > 'app/src/main/java/com/feynos/music/ui/CoverArtScreens.kt' <<'FEYNOS_EOF_054'
           @file:OptIn(ExperimentalMaterial3Api::class)
 
           package com.feynos.music.ui
@@ -5386,8 +5448,8 @@ jobs:
                   modifier = Modifier.clickable(onClick = onClick),
               )
           }
-          FEYNOS_EOF_053
-          cat > 'app/src/main/java/com/feynos/music/ui/DetailScreens.kt' <<'FEYNOS_EOF_054'
+          FEYNOS_EOF_054
+          cat > 'app/src/main/java/com/feynos/music/ui/DetailScreens.kt' <<'FEYNOS_EOF_055'
           @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
           package com.feynos.music.ui
@@ -5454,6 +5516,7 @@ jobs:
                               IconButton(onClick = { graph.addToPlaylistRequest.value = songs }) {
                                   Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, "Add to playlist", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                               }
+                              PinButton(Pin("album", album.id, album.name, album.artist.orEmpty(), album.coverArt))
                               IconButton(onClick = { pickCover = true }) {
                                   Icon(Icons.Rounded.ImageSearch, "Find cover art", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                               }
@@ -5619,6 +5682,7 @@ jobs:
                               meta = "Playlist · ${pl.entry.size} songs · ${totalDuration(pl.duration)}",
                               songs = pl.entry,
                           ) {
+                              PinButton(Pin("playlist", pl.id, pl.name, "Playlist · ${pl.entry.size} songs", pl.coverArt))
                               IconButton(onClick = { confirmDelete = true }) {
                                   Icon(Icons.Rounded.DeleteOutline, "Delete playlist", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                               }
@@ -5858,8 +5922,8 @@ jobs:
                   DownloadsContent()
               }
           }
-          FEYNOS_EOF_054
-          cat > 'app/src/main/java/com/feynos/music/ui/ForYouScreens.kt' <<'FEYNOS_EOF_055'
+          FEYNOS_EOF_055
+          cat > 'app/src/main/java/com/feynos/music/ui/ForYouScreens.kt' <<'FEYNOS_EOF_056'
           @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
           package com.feynos.music.ui
@@ -6263,8 +6327,8 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_055
-          cat > 'app/src/main/java/com/feynos/music/ui/JamScreen.kt' <<'FEYNOS_EOF_056'
+          FEYNOS_EOF_056
+          cat > 'app/src/main/java/com/feynos/music/ui/JamScreen.kt' <<'FEYNOS_EOF_057'
           @file:OptIn(ExperimentalMaterial3Api::class)
 
           package com.feynos.music.ui
@@ -6487,8 +6551,8 @@ jobs:
                   )
               }
           }
-          FEYNOS_EOF_056
-          cat > 'app/src/main/java/com/feynos/music/ui/Layouts.kt' <<'FEYNOS_EOF_057'
+          FEYNOS_EOF_057
+          cat > 'app/src/main/java/com/feynos/music/ui/Layouts.kt' <<'FEYNOS_EOF_058'
           package com.feynos.music.ui
 
           import androidx.compose.foundation.background
@@ -6620,8 +6684,8 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_057
-          cat > 'app/src/main/java/com/feynos/music/ui/MainScreens.kt' <<'FEYNOS_EOF_058'
+          FEYNOS_EOF_058
+          cat > 'app/src/main/java/com/feynos/music/ui/MainScreens.kt' <<'FEYNOS_EOF_059'
           @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
           package com.feynos.music.ui
@@ -6801,9 +6865,11 @@ jobs:
               }
               val d = data.data
               val layout = LocalUiLayout.current
+              val pins by graph.pins.list.collectAsStateWithLifecycle()
               PullToRefreshBox(isRefreshing = data.loading && d != null, onRefresh = { data.reload() }, modifier = Modifier.fillMaxSize()) {
                   LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
                       item { HomeHeader(layout) }
+                      pinnedRow(pins)
                       if (d == null) {
                           item { if (data.error != null) ErrorBox(data.error ?: "") { data.reload() } else LoadingBox() }
                           return@LazyColumn
@@ -7361,8 +7427,8 @@ jobs:
                   dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
               )
           }
-          FEYNOS_EOF_058
-          cat > 'app/src/main/java/com/feynos/music/ui/NowPlaying.kt' <<'FEYNOS_EOF_059'
+          FEYNOS_EOF_059
+          cat > 'app/src/main/java/com/feynos/music/ui/NowPlaying.kt' <<'FEYNOS_EOF_060'
           @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
           package com.feynos.music.ui
@@ -7972,8 +8038,104 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_059
-          cat > 'app/src/main/java/com/feynos/music/ui/SettingsScreen.kt' <<'FEYNOS_EOF_060'
+          FEYNOS_EOF_060
+          cat > 'app/src/main/java/com/feynos/music/ui/PinsUi.kt' <<'FEYNOS_EOF_061'
+          package com.feynos.music.ui
+
+          import androidx.compose.foundation.ExperimentalFoundationApi
+          import androidx.compose.foundation.combinedClickable
+          import androidx.compose.foundation.layout.*
+          import androidx.compose.foundation.lazy.LazyListScope
+          import androidx.compose.foundation.lazy.LazyRow
+          import androidx.compose.foundation.lazy.items
+          import androidx.compose.foundation.shape.RoundedCornerShape
+          import androidx.compose.material.icons.Icons
+          import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+          import androidx.compose.material.icons.automirrored.rounded.ArrowForward
+          import androidx.compose.material.icons.automirrored.rounded.QueueMusic
+          import androidx.compose.material.icons.rounded.Album
+          import androidx.compose.material.icons.rounded.PushPin
+          import androidx.compose.material.icons.outlined.PushPin
+          import androidx.compose.material3.*
+          import androidx.compose.runtime.*
+          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.draw.clip
+          import androidx.compose.ui.text.style.TextOverflow
+          import androidx.compose.ui.unit.dp
+          import androidx.lifecycle.compose.collectAsStateWithLifecycle
+          import com.feynos.music.data.Pin
+
+          /** Pin / unpin button for album and playlist pages. */
+          @Composable
+          fun PinButton(pin: Pin) {
+              val pins by graph.pins.list.collectAsStateWithLifecycle()
+              val pinned = pins.any { it.id == pin.id }
+              IconButton(onClick = {
+                  val now = graph.pins.toggle(pin)
+                  graph.toast(if (now) "Pinned to Home" else "Unpinned from Home")
+              }) {
+                  Icon(
+                      if (pinned) Icons.Rounded.PushPin else Icons.Outlined.PushPin,
+                      if (pinned) "Unpin from Home" else "Pin to Home",
+                      tint = if (pinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                  )
+              }
+          }
+
+          /** The "Pinned" row at the top of Home. */
+          fun LazyListScope.pinnedRow(pins: List<Pin>) {
+              if (pins.isEmpty()) return
+              item { SectionHeader("Pinned") }
+              item {
+                  LazyRow(contentPadding = PaddingValues(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                      items(pins, key = { it.id }) { p -> PinCard(p, first = p == pins.first(), last = p == pins.last()) }
+                  }
+              }
+          }
+
+          @OptIn(ExperimentalFoundationApi::class)
+          @Composable
+          private fun PinCard(p: Pin, first: Boolean, last: Boolean) {
+              val nav = LocalNavi.current
+              var menu by remember { mutableStateOf(false) }
+              Box {
+                  Column(
+                      Modifier.width(150.dp).clip(RoundedCornerShape(8.dp))
+                          .combinedClickable(
+                              onClick = { if (p.kind == "playlist") nav.playlist(p.id) else nav.album(p.id) },
+                              onLongClick = { menu = true },
+                          )
+                          .padding(4.dp),
+                  ) {
+                      Cover(
+                          p.coverArt, Modifier.fillMaxWidth().aspectRatio(1f), size = 400,
+                          placeholder = if (p.kind == "playlist") Icons.AutoMirrored.Rounded.QueueMusic else Icons.Rounded.Album,
+                          albumId = if (p.kind == "album") p.id else null,
+                      )
+                      Text(p.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
+                      Text(
+                          p.subtitle.ifBlank { if (p.kind == "playlist") "Playlist" else "Album" }, style = MaterialTheme.typography.bodySmall,
+                          color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                      )
+                  }
+                  DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                      DropdownMenuItem(text = { Text("Unpin") }, leadingIcon = { Icon(Icons.Outlined.PushPin, null) }, onClick = {
+                          menu = false
+                          graph.pins.remove(p.id)
+                      })
+                      if (!first) DropdownMenuItem(text = { Text("Move left") }, leadingIcon = { Icon(Icons.AutoMirrored.Rounded.ArrowBack, null) }, onClick = {
+                          menu = false
+                          graph.pins.move(p.id, -1)
+                      })
+                      if (!last) DropdownMenuItem(text = { Text("Move right") }, leadingIcon = { Icon(Icons.AutoMirrored.Rounded.ArrowForward, null) }, onClick = {
+                          menu = false
+                          graph.pins.move(p.id, 1)
+                      })
+                  }
+              }
+          }
+          FEYNOS_EOF_061
+          cat > 'app/src/main/java/com/feynos/music/ui/SettingsScreen.kt' <<'FEYNOS_EOF_062'
           @file:OptIn(ExperimentalMaterial3Api::class)
 
           package com.feynos.music.ui
@@ -8327,8 +8489,8 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_060
-          cat > 'app/src/main/java/com/feynos/music/ui/Shell.kt' <<'FEYNOS_EOF_061'
+          FEYNOS_EOF_062
+          cat > 'app/src/main/java/com/feynos/music/ui/Shell.kt' <<'FEYNOS_EOF_063'
           @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
           package com.feynos.music.ui
@@ -8641,8 +8803,8 @@ jobs:
                   dismissButton = { TextButton(onClick = onDismiss, enabled = progress == null) { Text("Later") } },
               )
           }
-          FEYNOS_EOF_061
-          cat > 'app/src/main/java/com/feynos/music/ui/Theme.kt' <<'FEYNOS_EOF_062'
+          FEYNOS_EOF_063
+          cat > 'app/src/main/java/com/feynos/music/ui/Theme.kt' <<'FEYNOS_EOF_064'
           package com.feynos.music.ui
 
           import android.os.Build
@@ -8723,8 +8885,8 @@ jobs:
                   CompositionLocalProvider(LocalContentColor provides scheme.onBackground, content = content)
               }
           }
-          FEYNOS_EOF_062
-          cat > 'app/src/main/java/com/feynos/music/ui/Visualizer.kt' <<'FEYNOS_EOF_063'
+          FEYNOS_EOF_064
+          cat > 'app/src/main/java/com/feynos/music/ui/Visualizer.kt' <<'FEYNOS_EOF_065'
           package com.feynos.music.ui
 
           import androidx.compose.foundation.Canvas
@@ -8958,7 +9120,7 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_063
+          FEYNOS_EOF_065
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
