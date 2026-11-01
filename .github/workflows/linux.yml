@@ -32,16 +32,36 @@ jobs:
         working-directory: linux
         run: npm version 1.0.${{ github.run_number }} --no-git-tag-version --allow-same-version
 
-      - name: Build .rpm
+      - name: Build app
         working-directory: linux
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -o pipefail
-          if ! npx electron-builder --linux rpm --x64 --publish never 2>&1 | tee build.log; then
+          if ! npx electron-builder --linux dir --x64 --publish never 2>&1 | tee build.log; then
             echo "::error::$(grep -v '^\s*•' build.log | tail -n 60 | sed 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g')"
             exit 1
           fi
+
+      # A plain RPM with no install scripts (electron-builder's scripts made updates fail).
+      - name: Build .rpm
+        run: |
+          set -o pipefail
+          V=1.0.${{ github.run_number }}
+          mkdir -p "$PWD/rpmbuild"
+          if ! rpmbuild -bb linux/packaging/feynos-music.spec \
+              --define "_topdir $PWD/rpmbuild" \
+              --define "app_version $V" \
+              --define "app_dir $PWD/linux/dist/linux-unpacked" \
+              --define "icon_file $PWD/linux/build/icon.png" 2>&1 | tee rpm.log; then
+            echo "::error::$(tail -n 40 rpm.log | sed 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g')"
+            exit 1
+          fi
+          cp rpmbuild/RPMS/x86_64/feynos-music-$V-1.x86_64.rpm linux/dist/feynos-music-$V.x86_64.rpm
+          R=linux/dist/feynos-music-$V.x86_64.rpm
+          SCRIPTS=$(rpm -qp --scripts "$R")
+          if [ -n "$SCRIPTS" ]; then echo "::error::The RPM has install scripts: $SCRIPTS"; exit 1; fi
+          echo "::notice::RPM contents: $(rpm -qpl "$R" | grep -v '^/usr/lib/feynos-music/.' | tr '\n' ' ') · requires: $(rpm -qpR "$R" | tr '\n' ' ') · app files: $(rpm -qpl "$R" | grep -c '^/usr/lib/feynos-music/')"
 
       - name: List output
         run: ls -la linux/dist
@@ -57,4 +77,5 @@ jobs:
 
             Install: download the .rpm below, then run
             `sudo dnf install ./feynos-music-1.0.${{ github.run_number }}.x86_64.rpm`
+            (Fedora Silverblue, Kinoite or Bazzite: `rpm-ostree install ./feynos-music-1.0.${{ github.run_number }}.x86_64.rpm`, then restart.)
           files: linux/dist/*.rpm
