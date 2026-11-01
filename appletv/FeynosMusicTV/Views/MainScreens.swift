@@ -374,7 +374,7 @@ struct PlaylistsGrid: View {
 
 struct ArtistsGrid: View {
     var body: some View {
-        Loader(id: "artists", load: { try await Subsonic.shared.artists().sorted { $0.title.lowercased() < $1.title.lowercased() } }) { list in
+        Loader(id: "artists", load: { await ArtistGroups.group(try await Subsonic.shared.artists()).sorted { $0.title.lowercased() < $1.title.lowercased() } }) { list in
             ScrollView {
                 LazyVGrid(columns: cardColumns(264), spacing: 50) {
                     ForEach(list) { ArtistCard(artist: $0) }

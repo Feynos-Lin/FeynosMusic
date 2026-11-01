@@ -61,6 +61,7 @@ struct ArtistPage {
     let artist: Artist
     let info: ArtistInfo?
     let top: [Song]
+    var collabs: [Album] = []
 }
 
 struct ArtistView: View {
@@ -73,7 +74,14 @@ struct ArtistView: View {
             let artist = try await api.artist(id)
             async let info = api.artistInfo(id)
             async let top = api.topSongs(artist.title, count: 20)
-            return ArtistPage(artist: artist, info: try? await info, top: (try? await top) ?? [])
+            // Albums from entries like "Eminem & D12" that are filed under this artist.
+            var collabs: [Album] = []
+            var seen = Set((artist.album ?? []).map(\.id))
+            for m in await ArtistGroups.membersOf(artist) {
+                for a in (try? await api.artist(m.id))?.album ?? [] where seen.insert(a.id).inserted { collabs.append(a) }
+            }
+            collabs.sort { ($0.year ?? 0) > ($1.year ?? 0) }
+            return ArtistPage(artist: artist, info: try? await info, top: (try? await top) ?? [], collabs: collabs)
         }) { page in
             let artist = page.artist
             let liked = store.isStarred(artist.id, artist.starred)
@@ -101,7 +109,7 @@ struct ArtistView: View {
                                 Button {
                                     Task {
                                         var all: [Song] = []
-                                        for a in albums { all += ((try? await Subsonic.shared.album(a.id))?.songs ?? []) }
+                                        for a in albums + page.collabs { all += ((try? await Subsonic.shared.album(a.id))?.songs ?? []) }
                                         Player.shared.play(all, shuffle: true)
                                     }
                                 } label: { Label("Shuffle", systemImage: "shuffle") }
@@ -124,6 +132,11 @@ struct ArtistView: View {
                     if !albums.isEmpty {
                         Shelf(title: "Discography") {
                             ForEach(albums) { AlbumCard(album: $0, subtitle: $0.year.map { "\($0)" } ?? "Album") }
+                        }
+                    }
+                    if !page.collabs.isEmpty {
+                        Shelf(title: "Collaborations") {
+                            ForEach(page.collabs) { AlbumCard(album: $0, subtitle: [$0.year.map { "\($0)" }, $0.artist].compactMap { $0 }.joined(separator: " · ")) }
                         }
                     }
                     if let similar = page.info?.similarArtist, !similar.isEmpty {

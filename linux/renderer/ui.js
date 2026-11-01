@@ -351,7 +351,7 @@ const UI = {
       const albums = await API.albumList('alphabeticalByName', 500, 0);
       body = `<div class="grid">${albums.map((a) => this.albumCard(a)).join('')}</div>${albums.length === 500 ? '<p class="muted">Showing the first 500 albums. Use Search to find others.</p>' : ''}`;
     } else {
-      const artists = (await API.artists()).sort((a, b) => String(a.name).localeCompare(String(b.name)));
+      const artists = ArtistGroups.group(await API.artists()).sort((a, b) => String(a.name).localeCompare(String(b.name)));
       body = `<div class="grid">${artists.map((a) => this.artistCard(a)).join('')}</div>`;
     }
     return `<h1>Your Library</h1>${this.chips('libTab', [['playlists', 'Playlists'], ['albums', 'Albums'], ['artists', 'Artists']], tab)}${body}`;
@@ -375,8 +375,13 @@ const UI = {
     const image = info.largeImageUrl && /^http/.test(info.largeImageUrl) && !info.largeImageUrl.includes('2a96cbd8b46e442fc41c2b86b821562f')
       ? `<img class="art round" src="${esc(info.largeImageUrl)}" alt="">` : img(artist.coverArt, null, 600, 'art round');
     const albums = artist.album.slice().sort((a, b) => (b.year || 0) - (a.year || 0));
+    // Albums from entries like "Eminem & D12" that are filed under this artist.
+    const members = await ArtistGroups.membersOf(artist);
+    const seen = new Set(albums.map((a) => a.id));
+    const collabs = (await Promise.all(members.map((m) => API.artist(m.id).then((x) => x.album).catch(() => []))))
+      .flat().filter((a) => !seen.has(a.id) && seen.add(a.id)).sort((a, b) => (b.year || 0) - (a.year || 0));
     const key = this.reg(top);
-    this.lists.artistAlbums = albums;
+    this.lists.artistAlbums = albums.concat(collabs);
     return this.hero(image, 'Artist', artist.name, `${artist.albumCount || albums.length} albums`) + `
       <div class="actions"><button class="play-big" data-act="play-list" data-list="${key}">${ICON.play}</button>
       <button class="iconbtn" data-act="artist-shuffle" title="Shuffle all">${ICON.shuffle}</button>
@@ -384,6 +389,7 @@ const UI = {
       <button class="btn" data-act="star" data-kind="artist" data-id="${esc(artist.id)}" data-on="${starred ? 1 : 0}">${starred ? 'Following' : 'Follow'}</button></div>
       ${top.length ? `<h2>Popular</h2>${this.songRows(top.slice(0, 10))}` : ''}
       ${albums.length ? `<h2>Discography</h2><div class="row">${albums.map((a) => this.albumCard(a)).join('')}</div>` : ''}
+      ${collabs.length ? `<h2>Collaborations</h2><div class="row">${collabs.map((a) => this.albumCard(a)).join('')}</div>` : ''}
       ${info.similarArtist.length ? `<h2>Fans also like</h2><div class="row">${info.similarArtist.map((a) => this.artistCard(a)).join('')}</div>` : ''}
       ${info.biography ? `<h2>About</h2><p class="muted" style="max-width:900px;line-height:1.6">${esc(stripHtml(info.biography))}</p>` : ''}`;
   },

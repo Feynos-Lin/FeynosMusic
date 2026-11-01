@@ -461,6 +461,51 @@ function artUrl(coverArt, albumId, size = 300) {
 
 // ---------------- ListenBrainz ----------------
 
+/**
+ * Tidies the artist list: entries like "Eminem & D12", "Eminem ft. CeeLo Green" or "Eminem, Dr. Dre & 50 Cent"
+ * are folded under "Eminem", whose page then shows their albums too. An entry is only folded when the first
+ * name is an artist of its own in the library, so band names like "Mumford & Sons" stay as they are.
+ */
+const ArtistGroups = {
+  splitter: /\s*(?:,|&|\+|\/|;|\s(?:feat\.?|ft\.?|featuring|vs\.?|x|with|and)\s)\s*/i,
+  members: null, // main artist id -> [combined entries]
+  key(name) {
+    return String(name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  },
+  primaryName(name) {
+    const m = this.splitter.exec(String(name || ''));
+    if (!m) return null;
+    const first = name.slice(0, m.index).trim();
+    return first && first.length < name.trim().length ? first : null;
+  },
+  group(all) {
+    const byName = new Map(all.map((a) => [this.key(a.name), a]));
+    const found = new Map();
+    const shown = all.filter((a) => {
+      const p = this.primaryName(a.name);
+      const main = p && byName.get(this.key(p));
+      if (main && main.id !== a.id) {
+        if (!found.has(main.id)) found.set(main.id, []);
+        found.get(main.id).push(a);
+        return false;
+      }
+      return true;
+    });
+    this.members = found;
+    return shown.map((a) => (found.has(a.id) ? { ...a, albumCount: (a.albumCount || 0) + found.get(a.id).reduce((n, m) => n + (m.albumCount || 0), 0) } : a));
+  },
+  async membersOf(artist) {
+    if (!this.members) {
+      try {
+        this.group(await API.artists());
+      } catch (e) {
+        return [];
+      }
+    }
+    return this.members.get(artist.id) || [];
+  },
+};
+
 const LB = {
   base: 'https://api.listenbrainz.org',
 
