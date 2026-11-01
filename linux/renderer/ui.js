@@ -511,9 +511,14 @@ const UI = {
     return `<h1>Settings</h1><div class="form">
       <h2>Navidrome</h2><div class="setting"><div class="l"><div>${esc(Settings.username)}</div><div class="s">${esc(Settings.serverUrl)}</div></div><button class="btn danger" data-act="logout">Sign out</button></div>
       <h2>ListenBrainz</h2>${lbConnected()
-        ? `<div class="setting"><div class="l"><div>Connected as ${esc(Settings.lbUser)}</div><div class="s">Listens are stored in your MetaBrainz account${Store.lbQueue.length ? ` · ${Store.lbQueue.length} waiting to upload` : ''}</div></div><button class="btn" data-act="lb-disconnect">Disconnect</button></div>${sw('scrobbleLb', 'Send listens to ListenBrainz')}`
-        : `<p class="muted">Paste your user token from <a href="#" data-act="open-url" data-url="https://listenbrainz.org/settings/">listenbrainz.org/settings</a> to keep your listening history in your MusicBrainz account and unlock weekly playlists.</p>
-           <div class="field"><input id="lb-token" placeholder="User token" type="password"></div><button class="btn primary" data-act="lb-connect">Connect</button>`}
+        ? Settings.lbViaServer
+          ? `<div class="setting"><div class="l"><div>Connected as ${esc(Settings.lbUser)}</div><div class="s">Your Navidrome server sends your listens. Keep "Scrobble to Navidrome" on.</div></div><button class="btn" data-act="lb-disconnect">Disconnect</button></div>`
+          : `<div class="setting"><div class="l"><div>Connected as ${esc(Settings.lbUser)}</div><div class="s">Listens are stored in your MetaBrainz account${Store.lbQueue.length ? ` · ${Store.lbQueue.length} waiting to upload` : ''}</div></div><button class="btn" data-act="lb-disconnect">Disconnect</button></div>${sw('scrobbleLb', 'Send listens to ListenBrainz')}
+             ${Settings.serverLbLinked && Settings.scrobbleLb && Settings.scrobbleNavidrome ? `<p class="muted" style="color:#ff8a65">Your Navidrome account also sends listens to ListenBrainz, so songs may be counted twice. Turn this off, or turn off "Scrobble to Navidrome".</p>` : ''}`
+        : `<p class="muted">${Settings.serverLbLinked ? 'Your Navidrome account is linked to ListenBrainz, so just enter your ListenBrainz user name. No token needed.' : 'If ListenBrainz is linked in your Navidrome web page (Settings &gt; Personal), just enter your ListenBrainz user name.'}</p>
+           <div class="field"><input id="lb-name" placeholder="ListenBrainz user name"></div><button class="btn primary" data-act="lb-connect-name">Use my Navidrome server's link</button>
+           <p class="muted">Or paste your user token from <a href="#" data-act="open-url" data-url="https://listenbrainz.org/settings/">listenbrainz.org/settings</a> to keep your listening history in your MusicBrainz account and unlock weekly playlists.</p>
+           <div class="field"><input id="lb-token" placeholder="User token" type="password"></div><button class="btn" data-act="lb-connect">Connect with token</button>`}
       <h2>Playback</h2>${sw('scrobbleNavidrome', 'Scrobble to Navidrome', 'Updates play counts (and Last.fm, if set up on the server)')}
       ${sel('maxBitrate', 'Streaming quality', [[0, 'Original'], [320, '320 kbps'], [256, '256 kbps'], [192, '192 kbps'], [128, '128 kbps']])}
       ${sel('format', 'Transcode format', [['raw', 'Server default'], ['opus', 'Opus'], ['mp3', 'MP3'], ['aac', 'AAC']])}
@@ -623,7 +628,8 @@ const UI = {
       <div class="left">${this.visOrArt(art)}<div class="t">${esc(s.title)}</div>
         <div class="muted">${s.artistId ? `<span class="link" data-act="go-artist" data-id="${esc(s.artistId)}">${esc(s.artist || '')}</span>` : esc(s.artist || '')}${s.album ? ` · ${s.albumId ? `<span class="link" data-act="go-album" data-id="${esc(s.albumId)}">${esc(s.album)}</span>` : esc(s.album)}` : ''}</div>
         ${Jam.role !== 'none' ? `<div style="color:var(--accent);font-weight:700">Jam · ${esc(Jam.people().join(', '))}</div>` : ''}
-        <button class="btn ${Settings.visualizer !== 'off' ? 'primary' : ''}" data-act="vis-cycle">${ICON.wave} Visualizer: ${VIS_LABEL[Settings.visualizer] || 'Off'}</button></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center"><button class="btn ${Settings.visualizer !== 'off' ? 'primary' : ''}" data-act="vis-cycle">${ICON.wave} Visualizer: ${VIS_LABEL[Settings.visualizer] || 'Off'}</button>
+        <button class="btn" data-act="vis-full" title="Full-screen visualizer (F)">⛶ Full screen</button></div></div>
       <div class="right">${this.chips('npTab', Settings.layout === 'youtube' ? [['queue', 'UP NEXT'], ['lyrics', 'LYRICS']] : [['lyrics', 'Lyrics'], ['queue', 'Up next']], this.npTab)}<div class="panel" id="nppanel">${this.npTab === 'queue' ? queueHtml : '<div class="spinner"></div>'}</div></div>`;
     this.markCurrent();
     const vis = $('#vis');
@@ -651,7 +657,66 @@ const UI = {
     const style = Settings.visualizer || 'off';
     if (style === 'off') return `<img src="${esc(art)}" alt="" onerror="this.src='${PLACEHOLDER}'">`;
     const note = Player.remote ? `<div class="visnote">The visualizer follows music playing on this computer. In a jam the music plays on the host.</div>` : '';
-    return `<div class="visbox">${style === 'circle' ? `<img class="vc" src="${esc(art)}" alt="" onerror="this.src='${PLACEHOLDER}'">` : ''}<canvas id="vis"></canvas>${note}</div>`;
+    return `<div class="visbox" data-act="vis-full" title="Full screen">${style === 'circle' ? `<img class="vc" src="${esc(art)}" alt="" onerror="this.src='${PLACEHOLDER}'">` : ''}<canvas id="vis"></canvas>${note}</div>`;
+  },
+
+  /** The visualizer filling the screen. Click changes the style; F, Esc or the X closes it. */
+  openFullVis() {
+    if ($('#visfull')) return;
+    if ((Settings.visualizer || 'off') === 'off') {
+      Settings.visualizer = 'bars';
+      saveSettings();
+    }
+    Player.analyserNode();
+    const el = document.createElement('div');
+    el.id = 'visfull';
+    el.dataset.act = 'vis-full-cycle';
+    document.body.appendChild(el);
+    this.fullVisSong = null;
+    this.paintFullVis();
+    this.fullVisTimer = setInterval(() => this.paintFullVis(), 1000);
+    this.pokeFullVis();
+    el.addEventListener('mousemove', () => this.pokeFullVis());
+    if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(() => {});
+  },
+
+  /** Builds or refreshes the full-screen view (on open, song change and style change). */
+  paintFullVis(force) {
+    const el = $('#visfull');
+    if (!el) return;
+    const s = Player.current();
+    const style = Settings.visualizer || 'bars';
+    const key = (s ? s.id : '') + '|' + style;
+    if (!force && key === this.fullVisSong) return;
+    this.fullVisSong = key;
+    const art = (s && artUrl(s.coverArt, s.albumId, 800)) || PLACEHOLDER;
+    el.className = 'vis-' + style + (el.classList.contains('idle') ? ' idle' : '');
+    el.innerHTML = `<div class="bg" style="background-image:url('${esc(art)}')"></div>
+      ${style === 'circle' ? `<img class="vc" src="${esc(art)}" alt="" onerror="this.src='${PLACEHOLDER}'">` : ''}<canvas></canvas>
+      ${Player.remote ? `<div class="visnote">The visualizer follows music playing on this computer. In a jam the music plays on the host.</div>` : ''}
+      <div class="info"><b>${esc(s ? s.title : '')}</b><div>${esc(s ? s.artist || '' : '')}</div><div class="hint">Click to change style · Space to pause · F or Esc to close</div></div>
+      <button class="iconbtn close" data-act="vis-full-close" title="Close">${ICON.close}</button>`;
+    Visualizer.attach(el.querySelector('canvas'));
+  },
+
+  /** Shows the song details and mouse pointer for a few seconds. */
+  pokeFullVis() {
+    const el = $('#visfull');
+    if (!el) return;
+    el.classList.remove('idle');
+    clearTimeout(this.fullVisIdle);
+    this.fullVisIdle = setTimeout(() => el.classList.add('idle'), 3000);
+  },
+
+  closeFullVis() {
+    const el = $('#visfull');
+    if (!el) return;
+    clearInterval(this.fullVisTimer);
+    clearTimeout(this.fullVisIdle);
+    el.remove();
+    Visualizer.stop();
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    if (this.npOpen) this.renderNp();
   },
 
   highlightLyric(pos) {
@@ -922,7 +987,25 @@ const UI = {
         try {
           const user = await LB.validate(token);
           if (!user) return toast("That token isn't valid");
-          Object.assign(Settings, { lbToken: token, lbUser: user });
+          Object.assign(Settings, { lbToken: token, lbUser: user, lbViaServer: false });
+          // Avoid counting songs twice when Navidrome sends them too.
+          if (Settings.serverLbLinked && Settings.scrobbleNavidrome) Settings.scrobbleLb = false;
+          saveSettings();
+          toast(`Connected to ListenBrainz as ${user}`);
+          this.render();
+          Mixes.generate(true);
+        } catch (e) {
+          toast(`Couldn't reach ListenBrainz: ${e.message}`);
+        }
+        break;
+      }
+      case 'lb-connect-name': {
+        const name = $('#lb-name').value.trim();
+        if (!name) break;
+        try {
+          const user = await LB.userExists(name);
+          if (!user) return toast(`There's no ListenBrainz user called ${name}`);
+          Object.assign(Settings, { lbToken: '', lbUser: user, lbViaServer: true, scrobbleNavidrome: true });
           saveSettings();
           toast(`Connected to ListenBrainz as ${user}`);
           this.render();
@@ -933,7 +1016,7 @@ const UI = {
         break;
       }
       case 'lb-disconnect':
-        Object.assign(Settings, { lbToken: '', lbUser: '' });
+        Object.assign(Settings, { lbToken: '', lbUser: '', lbViaServer: false });
         saveSettings();
         this.render();
         break;
@@ -992,6 +1075,18 @@ const UI = {
         }
         break;
       case 'modal-close': this.closeModal(); break;
+      case 'vis-full': this.openFullVis(); break;
+      case 'vis-full-close': this.closeFullVis(); break;
+      case 'vis-full-cycle': {
+        let next = Visualizer.next(Settings.visualizer || 'bars');
+        if (next === 'off') next = 'bars';
+        Settings.visualizer = next;
+        saveSettings();
+        this.paintFullVis(true);
+        this.pokeFullVis();
+        toast(`Visualizer: ${VIS_LABEL[next]}`);
+        break;
+      }
       case 'vis-cycle':
         Settings.visualizer = Visualizer.next(Settings.visualizer || 'off');
         saveSettings();
@@ -1085,6 +1180,8 @@ const UI = {
       if (ev.code === 'Space') {
         ev.preventDefault();
         Player.toggle();
+      } else if (ev.key === 'Escape' && $('#visfull')) {
+        this.closeFullVis();
       } else if (ev.key === 'Escape') {
         this.hideMenu();
         this.closeModal();
@@ -1095,11 +1192,18 @@ const UI = {
         Player.next();
       } else if (ev.ctrlKey && ev.key === 'ArrowLeft') {
         Player.previous();
+      } else if (ev.key.toLowerCase() === 'f' && !ev.ctrlKey && !ev.altKey) {
+        if ($('#visfull')) this.closeFullVis();
+        else this.openFullVis();
       } else if (ev.key.toLowerCase() === 'v' && !ev.ctrlKey && !ev.altKey) {
         this.act('vis-cycle', ev.target, ev);
       } else if (ev.ctrlKey && ev.key.toLowerCase() === 'f') {
         this.go('search', {});
       }
+    });
+    // Leaving the computer's full screen (e.g. with Esc) also closes the full-screen visualizer.
+    document.addEventListener('fullscreenchange', () => {
+      if (!document.fullscreenElement && $('#visfull')) this.closeFullVis();
     });
     document.addEventListener('mouseup', (ev) => {
       if (ev.button === 3) this.back();

@@ -249,3 +249,18 @@ body.layout-youtube .chip { border-radius: 8px; }
 .np-view .left .visbox .vc { position: absolute; left: 29%; top: 29%; width: 42%; height: 42%; border-radius: 50%; box-shadow: none; }
 .np-view .left .visnote { position: absolute; inset: auto 20px 20px; text-align: center; color: var(--muted); font-size: 13px; }
 .np-view .left .btn svg { width: 18px; height: 18px; vertical-align: -4px; margin-right: 4px; }
+
+/* Full-screen visualizer */
+#visfull { position: fixed; inset: 0; z-index: 1000; background: #000; cursor: pointer; overflow: hidden; }
+#visfull .bg { position: absolute; inset: -60px; background-size: cover; background-position: center; filter: blur(60px); opacity: 0.35; }
+#visfull canvas { position: absolute; inset: 12vh 4vw; width: 92vw; height: 76vh; }
+#visfull.vis-circle canvas { inset: 0; width: 100vw; height: 100vh; }
+#visfull .vc { position: absolute; left: 50%; top: 50%; width: 42vmin; height: 42vmin; transform: translate(-50%, -50%); border-radius: 50%; object-fit: cover; }
+#visfull .info { position: absolute; left: 40px; bottom: 32px; color: #fff; transition: opacity 0.6s; text-shadow: 0 1px 6px #000a; }
+#visfull .info b { font-size: 26px; display: block; }
+#visfull .info .hint { opacity: 0.55; font-size: 12px; margin-top: 8px; }
+#visfull .close { position: absolute; top: 20px; right: 20px; color: #fff; transition: opacity 0.6s; }
+#visfull .visnote { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); color: #fff; max-width: 420px; text-align: center; }
+#visfull.idle { cursor: none; }
+#visfull.idle .info, #visfull.idle .close { opacity: 0; }
+.np-view .left .visbox { cursor: zoom-in; }

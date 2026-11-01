@@ -1038,6 +1038,14 @@ jobs:
                   return if (r["valid"].str == "true") r["user_name"].str else null
               }
 
+              /** The user name if a ListenBrainz user by that name exists, or null. No token needed. */
+              suspend fun userExists(name: String): String? {
+                  val clean = name.trim()
+                  if (clean.isEmpty()) return null
+                  val r = fetch("/1/user/${enc(clean)}/listen-count", null) ?: return null
+                  return if ((r as? kotlinx.serialization.json.JsonObject)?.containsKey("payload") == true) clean else null
+              }
+
               suspend fun submitRaw(body: String): Boolean = withContext(Dispatchers.IO) {
                   val token = settings.current.lbToken
                   if (token.isBlank()) return@withContext false
@@ -1685,9 +1693,13 @@ jobs:
               val theme: String = "feynos",
               val layout: String = "feynos",
               val visualizer: String = "off",
+              /** ListenBrainz through the account linked on the Navidrome server: only the user name is kept, Navidrome sends the listens. */
+              val lbViaServer: Boolean = false,
+              /** Whether this Navidrome account had ListenBrainz linked when signing in. */
+              val serverLbLinked: Boolean = false,
           ) {
               val loggedIn: Boolean get() = serverUrl.isNotBlank() && username.isNotBlank() && token.isNotBlank()
-              val lbConnected: Boolean get() = lbToken.isNotBlank() && lbUser.isNotBlank()
+              val lbConnected: Boolean get() = lbUser.isNotBlank() && (lbToken.isNotBlank() || lbViaServer)
           }
 
           class SettingsStore(private val context: Context) {
@@ -1712,6 +1724,8 @@ jobs:
               private val kTheme = stringPreferencesKey("theme")
               private val kLayout = stringPreferencesKey("layout")
               private val kVisualizer = stringPreferencesKey("visualizer")
+              private val kLbViaServer = booleanPreferencesKey("lb_via_server")
+              private val kServerLb = booleanPreferencesKey("server_lb_linked")
 
               private val _state = MutableStateFlow(AppSettings())
               val state: StateFlow<AppSettings> = _state.asStateFlow()
@@ -1751,6 +1765,8 @@ jobs:
                       theme = p[kTheme] ?: d.theme,
                       layout = p[kLayout] ?: d.layout,
                       visualizer = p[kVisualizer] ?: d.visualizer,
+                      lbViaServer = p[kLbViaServer] ?: d.lbViaServer,
+                      serverLbLinked = p[kServerLb] ?: d.serverLbLinked,
                   )
               }
 
@@ -1775,6 +1791,8 @@ jobs:
                   p[kTheme] = s.theme
                   p[kLayout] = s.layout
                   p[kVisualizer] = s.visualizer
+                  p[kLbViaServer] = s.lbViaServer
+                  p[kServerLb] = s.serverLbLinked
                   p[kAutoCovers] = s.autoCovers
               }
           }
@@ -2219,7 +2237,9 @@ jobs:
           import kotlinx.coroutines.flow.update
           import kotlinx.coroutines.launch
           import kotlinx.coroutines.withContext
+          import okhttp3.MediaType.Companion.toMediaTypeOrNull
           import okhttp3.OkHttpClient
+          import okhttp3.RequestBody.Companion.toRequestBody
           import java.io.File
           import java.util.concurrent.TimeUnit
 
@@ -2278,7 +2298,8 @@ jobs:
                       val s = settings.current.copy(serverUrl = url, username = user.trim(), token = token, salt = salt)
                       try {
                           api.pingWith(s)
-                          settings.update { s }
+                          val linked = listenBrainzLinked(url, user.trim(), password)
+                          settings.update { s.copy(serverLbLinked = linked) }
                           Workers.schedule(app)
                           return
                       } catch (e: Exception) {
@@ -2288,11 +2309,41 @@ jobs:
                   throw last ?: Exception("Could not connect")
               }
 
+              /**
+               * Asks Navidrome whether this account has ListenBrainz linked (Settings > Personal in its web page).
+               * Navidrome only answers yes or no and never hands out the token. Needs the password, so it's
+               * only checked while signing in.
+               */
+              private suspend fun listenBrainzLinked(server: String, user: String, password: String): Boolean = withContext(Dispatchers.IO) {
+                  try {
+                      val body = kotlinx.serialization.json.buildJsonObject {
+                          put("username", kotlinx.serialization.json.JsonPrimitive(user))
+                          put("password", kotlinx.serialization.json.JsonPrimitive(password))
+                      }.toString()
+                      val login = okhttp3.Request.Builder().url("$server/auth/login")
+                          .post(body.toRequestBody("application/json".toMediaTypeOrNull())).build()
+                      val jwt = http.newCall(login).execute().use { r ->
+                          if (!r.isSuccessful) return@withContext false
+                          com.feynos.music.util.AppJson.parseToJsonElement(r.body?.string().orEmpty())
+                              .let { (it as? kotlinx.serialization.json.JsonObject)?.get("token") }
+                              ?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }
+                      } ?: return@withContext false
+                      val link = okhttp3.Request.Builder().url("$server/api/listenbrainz/link").header("X-ND-Authorization", "Bearer $jwt").build()
+                      http.newCall(link).execute().use { r ->
+                          if (!r.isSuccessful) return@use false
+                          val o = com.feynos.music.util.AppJson.parseToJsonElement(r.body?.string().orEmpty()) as? kotlinx.serialization.json.JsonObject
+                          (o?.get("status") as? kotlinx.serialization.json.JsonPrimitive)?.content == "true"
+                      }
+                  } catch (e: Exception) {
+                      false
+                  }
+              }
+
               suspend fun logout() {
                   if (jam.state.value.role != com.feynos.music.jam.JamRole.NONE) jam.leave()
                   withContext(Dispatchers.Main) { player.stopAndClear() }
                   File(app.filesDir, "queue.json").delete()
-                  settings.update { AppSettings(lbToken = it.lbToken, lbUser = it.lbUser) }
+                  settings.update { AppSettings(lbToken = it.lbToken, lbUser = it.lbUser, lbViaServer = it.lbViaServer) }
                   starOverrides.value = emptyMap()
               }
 
@@ -7827,6 +7878,11 @@ jobs:
               }) {
                   Icon(Icons.Rounded.GraphicEq, "Visualizer", tint = if (on) MaterialTheme.colorScheme.primary else tint)
               }
+              if (on) {
+                  IconButton(onClick = { FullVisualizer.open = true }) {
+                      Icon(Icons.Rounded.Fullscreen, "Full-screen visualizer", tint = tint)
+                  }
+              }
           }
           FEYNOS_EOF_058
           cat > 'app/src/main/java/com/feynos/music/ui/SettingsScreen.kt' <<'FEYNOS_EOF_059'
@@ -7879,6 +7935,7 @@ jobs:
               val downloads by graph.downloads.collectAsStateWithLifecycle()
               var choice by remember { mutableStateOf<String?>(null) }
               var lbToken by remember { mutableStateOf("") }
+              var lbName by remember { mutableStateOf("") }
               var lbBusy by remember { mutableStateOf(false) }
               var update by remember { mutableStateOf<UpdateInfo?>(null) }
               var checking by remember { mutableStateOf(false) }
@@ -7898,25 +7955,62 @@ jobs:
 
                       Header("ListenBrainz")
                       if (s.lbConnected) {
-                          Item(Icons.Rounded.CheckCircle, "Connected as ${s.lbUser}", "Listens are stored in your MetaBrainz account")
-                          Toggle(Icons.Rounded.CloudUpload, "Send listens to ListenBrainz", "Scrobble every song you play", s.scrobbleLb) { v -> set { it.copy(scrobbleLb = v) } }
-                          val count = pending.data ?: 0
-                          if (count > 0) {
-                              Item(Icons.Rounded.Sync, "$count listens waiting to upload", "Tap to retry now") {
-                                  com.feynos.music.work.Workers.flushListenBrainz(ctx)
-                                  graph.toast("Retrying uploads")
+                          if (s.lbViaServer) {
+                              Item(Icons.Rounded.CheckCircle, "Connected as ${s.lbUser}", "Your Navidrome server sends your listens. Keep \"Scrobble to Navidrome\" on.")
+                          } else {
+                              Item(Icons.Rounded.CheckCircle, "Connected as ${s.lbUser}", "Listens are stored in your MetaBrainz account")
+                              Toggle(Icons.Rounded.CloudUpload, "Send listens to ListenBrainz", "Scrobble every song you play", s.scrobbleLb) { v -> set { it.copy(scrobbleLb = v) } }
+                              if (s.serverLbLinked && s.scrobbleLb && s.scrobbleNavidrome) {
+                                  Text(
+                                      "Your Navidrome account also sends listens to ListenBrainz, so songs may be counted twice. Turn this off, or turn off \"Scrobble to Navidrome\".",
+                                      style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error,
+                                      modifier = Modifier.padding(horizontal = 16.dp),
+                                  )
+                              }
+                              val count = pending.data ?: 0
+                              if (count > 0) {
+                                  Item(Icons.Rounded.Sync, "$count listens waiting to upload", "Tap to retry now") {
+                                      com.feynos.music.work.Workers.flushListenBrainz(ctx)
+                                      graph.toast("Retrying uploads")
+                                  }
                               }
                           }
-                          Item(Icons.Rounded.LinkOff, "Disconnect ListenBrainz", null) { set { it.copy(lbToken = "", lbUser = "") } }
+                          Item(Icons.Rounded.LinkOff, "Disconnect ListenBrainz", null) { set { it.copy(lbToken = "", lbUser = "", lbViaServer = false) } }
                       } else {
                           Text(
-                              "Paste your user token from listenbrainz.org/settings to keep your listening history in your MusicBrainz account and unlock weekly playlists.",
+                              if (s.serverLbLinked) "Your Navidrome account is linked to ListenBrainz, so just enter your ListenBrainz user name. No token needed."
+                              else "If ListenBrainz is linked in your Navidrome web page (Settings > Personal), just enter your ListenBrainz user name. Otherwise paste your user token from listenbrainz.org/settings.",
                               style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                               modifier = Modifier.padding(horizontal = 16.dp),
                           )
+                          Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                              OutlinedTextField(
+                                  value = lbName, onValueChange = { lbName = it }, singleLine = true, label = { Text("User name (Navidrome link)") },
+                                  modifier = Modifier.weight(1f),
+                              )
+                              Spacer(Modifier.width(8.dp))
+                              Button(enabled = lbName.isNotBlank() && !lbBusy, onClick = {
+                                  scope.launch {
+                                      lbBusy = true
+                                      try {
+                                          val user = graph.lb.userExists(lbName)
+                                          if (user == null) graph.toast("There's no ListenBrainz user called ${lbName.trim()}")
+                                          else {
+                                              graph.settings.update { it.copy(lbToken = "", lbUser = user, lbViaServer = true, scrobbleNavidrome = true) }
+                                              lbName = ""
+                                              graph.toast("Connected to ListenBrainz as $user")
+                                              graph.generateMixesNow(quiet = true)
+                                          }
+                                      } catch (e: Exception) {
+                                          graph.toast("Couldn't reach ListenBrainz: ${e.message}")
+                                      }
+                                      lbBusy = false
+                                  }
+                              }) { Text(if (lbBusy) "…" else "Use") }
+                          }
                           Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                               OutlinedTextField(
-                                  value = lbToken, onValueChange = { lbToken = it }, singleLine = true, label = { Text("User token") },
+                                  value = lbToken, onValueChange = { lbToken = it }, singleLine = true, label = { Text("Or a user token") },
                                   visualTransformation = PasswordVisualTransformation(), modifier = Modifier.weight(1f),
                               )
                               Spacer(Modifier.width(8.dp))
@@ -7928,7 +8022,11 @@ jobs:
                                           if (user == null) graph.toast("That token isn't valid")
                                           else {
                                               val token = lbToken.trim()
-                                              graph.settings.update { it.copy(lbToken = token, lbUser = user) }
+                                              // Avoid counting songs twice when Navidrome sends them too.
+                                              graph.settings.update {
+                                                  it.copy(lbToken = token, lbUser = user, lbViaServer = false,
+                                                      scrobbleLb = if (it.serverLbLinked && it.scrobbleNavidrome) false else it.scrobbleLb)
+                                              }
                                               lbToken = ""
                                               graph.toast("Connected to ListenBrainz as $user")
                                               graph.generateMixesNow(quiet = true)
@@ -8543,6 +8641,22 @@ jobs:
 
           import androidx.compose.foundation.Canvas
           import androidx.compose.foundation.background
+          import androidx.compose.foundation.clickable
+          import androidx.compose.foundation.interaction.MutableInteractionSource
+          import androidx.compose.material.icons.Icons
+          import androidx.compose.material.icons.rounded.Close
+          import androidx.compose.material3.Icon
+          import androidx.compose.material3.IconButton
+          import androidx.compose.ui.text.font.FontWeight
+          import androidx.compose.ui.text.style.TextOverflow
+          import androidx.compose.ui.window.Dialog
+          import androidx.compose.ui.window.DialogProperties
+          import androidx.compose.ui.window.DialogWindowProvider
+          import androidx.core.view.WindowCompat
+          import androidx.core.view.WindowInsetsCompat
+          import androidx.core.view.WindowInsetsControllerCompat
+          import kotlinx.coroutines.delay
+          import kotlinx.coroutines.launch
           import androidx.compose.foundation.layout.*
           import androidx.compose.foundation.shape.CircleShape
           import androidx.compose.material3.MaterialTheme
@@ -8550,6 +8664,8 @@ jobs:
           import androidx.compose.runtime.*
           import androidx.compose.ui.Alignment
           import androidx.compose.ui.Modifier
+          import androidx.compose.ui.draw.alpha
+          import androidx.compose.ui.draw.blur
           import androidx.compose.ui.draw.clip
           import androidx.compose.ui.geometry.Offset
           import androidx.compose.ui.graphics.*
@@ -8585,11 +8701,88 @@ jobs:
               if (style == "off") {
                   Cover(song.coverArt, albumId = song.albumId, modifier = modifier, size = 1000, shape = shape)
               } else {
-                  Box(modifier.clip(shape).background(Color.Black.copy(alpha = 0.25f)), contentAlignment = Alignment.Center) {
+                  Box(
+                      modifier.clip(shape).background(Color.Black.copy(alpha = 0.25f))
+                          .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { FullVisualizer.open = true },
+                      contentAlignment = Alignment.Center,
+                  ) {
                       if (style == "circle") {
                           Cover(song.coverArt, albumId = song.albumId, modifier = Modifier.fillMaxSize(0.42f), size = 600, shape = CircleShape)
                       }
                       Visualizer(style, Modifier.fillMaxSize())
+                  }
+              }
+              if (FullVisualizer.open) FullScreenVisualizer(onClose = { FullVisualizer.open = false })
+          }
+
+          /** Whether the full-screen visualizer is showing. */
+          object FullVisualizer {
+              var open by mutableStateOf(false)
+          }
+
+          /** The visualizer filling the screen. Tap to change style, the X or Back to close. */
+          @Composable
+          fun FullScreenVisualizer(onClose: () -> Unit) {
+              val settings by graph.settings.state.collectAsStateWithLifecycle()
+              val ps by graph.player.state.collectAsStateWithLifecycle()
+              val scope = rememberCoroutineScope()
+              val style = if (settings.visualizer == "off") "bars" else settings.visualizer
+              var showInfo by remember { mutableStateOf(true) }
+              var poke by remember { mutableIntStateOf(0) }
+              LaunchedEffect(poke) {
+                  showInfo = true
+                  delay(4000)
+                  showInfo = false
+              }
+              Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+                  // Hide the status and navigation bars while it's open.
+                  val window = (LocalView.current.parent as? DialogWindowProvider)?.window
+                  val view = LocalView.current
+                  DisposableEffect(window) {
+                      if (window != null) {
+                          WindowCompat.setDecorFitsSystemWindows(window, false)
+                          WindowInsetsControllerCompat(window, view).apply {
+                              hide(WindowInsetsCompat.Type.systemBars())
+                              systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                          }
+                      }
+                      onDispose { }
+                  }
+                  val song = ps.song
+                  Box(
+                      Modifier.fillMaxSize().background(Color.Black)
+                          .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                              val next = nextVisualizer(style).let { if (it == "off") "bars" else it }
+                              scope.launch { graph.settings.update { it.copy(visualizer = next) } }
+                              graph.toast("Visualizer: ${visualizerLabel(next)}")
+                              poke++
+                          },
+                      contentAlignment = Alignment.Center,
+                  ) {
+                      if (song != null) {
+                          Cover(song.coverArt, albumId = song.albumId, modifier = Modifier.fillMaxSize().blur(60.dp).alpha(0.35f), size = 600, shape = androidx.compose.ui.graphics.RectangleShape)
+                      }
+                      if (style == "circle") {
+                          BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                              val side = min(maxWidth.value, maxHeight.value).dp
+                              if (song != null) Cover(song.coverArt, albumId = song.albumId, modifier = Modifier.size(side * 0.42f), size = 600, shape = CircleShape)
+                              Visualizer(style, Modifier.size(side))
+                          }
+                      } else {
+                          Visualizer(style, Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 96.dp))
+                      }
+                      if (showInfo) {
+                          IconButton(onClick = onClose, modifier = Modifier.align(Alignment.TopEnd).padding(16.dp)) {
+                              Icon(Icons.Rounded.Close, "Close", tint = Color.White)
+                          }
+                          if (song != null) {
+                              Column(Modifier.align(Alignment.BottomStart).padding(24.dp)) {
+                                  Text(song.title, color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                  Text(song.artist.orEmpty(), color = Color.White.copy(alpha = 0.7f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                  Text("Tap to change style", color = Color.White.copy(alpha = 0.5f), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 6.dp))
+                              }
+                          }
+                      }
                   }
               }
           }

@@ -116,6 +116,9 @@ const Settings = Object.assign(
   {
     serverUrl: '', username: '', token: '', salt: '',
     lbToken: '', lbUser: '',
+    // lbViaServer: ListenBrainz through the account linked on the Navidrome server (only the user
+    // name is kept and Navidrome sends the listens). serverLbLinked: what Navidrome said at sign-in.
+    lbViaServer: false, serverLbLinked: false,
     scrobbleNavidrome: true, scrobbleLb: true,
     maxBitrate: 0, format: 'raw',
     syncMixes: false, autoCovers: true, autoUpdate: true,
@@ -162,7 +165,7 @@ function saveSettings() {
 }
 
 const loggedIn = () => !!(Settings.serverUrl && Settings.username && Settings.token);
-const lbConnected = () => !!(Settings.lbToken && Settings.lbUser);
+const lbConnected = () => !!(Settings.lbUser && (Settings.lbToken || Settings.lbViaServer));
 
 const Store = {
   plays: DB.get('plays', []), // [{song, at}]
@@ -297,7 +300,8 @@ const API = {
       const creds = { server: c, user: user.trim(), token, salt };
       try {
         await this.call('ping', [], creds);
-        Object.assign(Settings, { serverUrl: c, username: user.trim(), token, salt });
+        const serverLbLinked = await this.listenBrainzLinked(c, user.trim(), password);
+        Object.assign(Settings, { serverUrl: c, username: user.trim(), token, salt, serverLbLinked });
         saveSettings();
         return;
       } catch (e) {
@@ -305,6 +309,20 @@ const API = {
       }
     }
     throw last;
+  },
+
+  /** Asks Navidrome whether this account has ListenBrainz linked. It only answers yes or no (never the token) and needs the password, so it's checked at sign-in. */
+  async listenBrainzLinked(server, user, password) {
+    try {
+      const r = await fetch(`${server}/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: user, password }) });
+      if (!r.ok) return false;
+      const { token } = await r.json();
+      if (!token) return false;
+      const l = await fetch(`${server}/api/listenbrainz/link`, { headers: { 'X-ND-Authorization': `Bearer ${token}` } });
+      return l.ok && (await l.json()).status === true;
+    } catch (e) {
+      return false;
+    }
   },
 
   list(x) {
@@ -457,6 +475,16 @@ const LB = {
   },
   user() {
     return encodeURIComponent(Settings.lbUser);
+  },
+  /** The user name if a ListenBrainz user by that name exists, or null. No token needed. */
+  async userExists(name) {
+    const clean = String(name || '').trim();
+    if (!clean) return null;
+    const res = await fetch(`${this.base}/1/user/${encodeURIComponent(clean)}/listen-count`);
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(`ListenBrainz returned HTTP ${res.status}`);
+    const j = await res.json();
+    return j && j.payload ? clean : null;
   },
   async validate(token) {
     const r = await this.get('/1/validate-token', token.trim());
