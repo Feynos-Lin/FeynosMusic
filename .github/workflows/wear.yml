@@ -75,5 +75,8 @@ jobs:
             Watch remote for Feynos Music on your phone (Wear OS 3+, e.g. OnePlus Watch 2).
             Needs Feynos Music 1.0.24 or newer on the phone.
 
-            Install: see "Installing on your watch" in the repository README, or use the Wear Installer 2 app on your phone.
+            Install from a computer with adb:
+            1. On the watch: Settings > System > About > tap Build number 7 times, then Settings > Developer options > turn on ADB debugging and Wireless debugging.
+            2. Tap "Pair new device" on the watch, then on the computer run `adb pair <ip:port> <code>` and `adb connect <ip:port>` using what the watch shows.
+            3. Run `adb install FeynosMusicWear-1.0.${{ github.run_number }}.apk`.
           files: FeynosMusicWear-1.0.${{ github.run_number }}.apk
