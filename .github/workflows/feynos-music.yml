@@ -57,6 +57,8 @@ jobs:
          repositories {
              google()
              mavenCentral()
+             // Kadb (watch installer) needs a SPAKE2 library that's published on JitPack.
+             maven("https://jitpack.io")
          }
      }
      rootProject.name = "FeynosMusic"
@@ -114,7 +116,13 @@ jobs:
              compose = true
              buildConfig = true
          }
-         packaging { resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" } }
+         packaging {
+             resources {
+                 excludes += "/META-INF/{AL2.0,LGPL2.1}"
+                 excludes += "/META-INF/versions/9/OSGI-INF/MANIFEST.MF"
+                 excludes += "/META-INF/DEPENDENCIES"
+             }
+         }
          lint {
              checkReleaseBuilds = false
              abortOnError = false
@@ -147,6 +155,8 @@ jobs:
          // Talks to the Feynos Music watch app.
          implementation("com.google.android.gms:play-services-wearable:18.2.0")
          implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")
+         // Installs the watch app over Wi-Fi wireless debugging (an adb client).
+         implementation("com.flyfishxu:kadb:1.2.1")
      }
      FEYNOS_EOF_004
      cat > 'app/src/main/AndroidManifest.xml' <<'FEYNOS_EOF_005'
@@ -2430,6 +2440,7 @@ jobs:
 
          val player = PlayerController(app, this)
          val wear = com.feynos.music.wear.WearBridge(app, this)
+         val watchInstaller = com.feynos.music.wear.WatchInstaller(app, this)
 
          fun start() {
              settings.init(scope)
@@ -4530,7 +4541,185 @@ jobs:
          }
      }
      FEYNOS_EOF_051
-     cat > 'app/src/main/java/com/feynos/music/wear/WearBridge.kt' <<'FEYNOS_EOF_052'
+     cat > 'app/src/main/java/com/feynos/music/wear/WatchInstaller.kt' <<'FEYNOS_EOF_052'
+     package com.feynos.music.wear
+
+     import android.content.Context
+     import android.net.nsd.NsdManager
+     import android.net.nsd.NsdServiceInfo
+     import android.os.Build
+     import com.feynos.music.BuildConfig
+     import com.feynos.music.Graph
+     import com.feynos.music.util.AppJson
+     import com.flyfishxu.kadb.Kadb
+     import com.flyfishxu.kadb.cert.KadbCert
+     import kotlinx.coroutines.Dispatchers
+     import kotlinx.coroutines.flow.MutableStateFlow
+     import kotlinx.coroutines.flow.StateFlow
+     import kotlinx.coroutines.flow.asStateFlow
+     import kotlinx.coroutines.flow.update
+     import kotlinx.coroutines.withContext
+     import kotlinx.serialization.json.JsonArray
+     import kotlinx.serialization.json.JsonObject
+     import kotlinx.serialization.json.jsonPrimitive
+     import okhttp3.Request
+     import java.io.File
+
+     /** A watch found on the Wi-Fi with wireless debugging on. */
+     data class FoundService(val name: String, val host: String, val port: Int)
+
+     /**
+      * Installs and updates the Feynos Music watch app straight from the phone, the way a computer
+      * would with adb: over the watch's Wi-Fi "wireless debugging", paired once with a 6-digit code.
+      */
+     class WatchInstaller(private val ctx: Context, private val graph: Graph) {
+         private val dir = File(ctx.filesDir, "adb").apply { mkdirs() }
+         private val keyFile = File(dir, "adbkey.pem")
+         private val certFile = File(dir, "adbkey.crt")
+         private val prefs = ctx.getSharedPreferences("watch_install", Context.MODE_PRIVATE)
+
+         private val _pairing = MutableStateFlow<List<FoundService>>(emptyList())
+         /** Watches currently showing the "Pair new device" code. */
+         val pairing: StateFlow<List<FoundService>> = _pairing.asStateFlow()
+         private val _connect = MutableStateFlow<List<FoundService>>(emptyList())
+         /** Watches with wireless debugging on, ready to install to. */
+         val connect: StateFlow<List<FoundService>> = _connect.asStateFlow()
+
+         var paired: Boolean
+             get() = prefs.getBoolean("paired", false)
+             private set(v) = prefs.edit().putBoolean("paired", v).apply()
+         var lastHost: String
+             get() = prefs.getString("host", "").orEmpty()
+             set(v) = prefs.edit().putString("host", v).apply()
+
+         /** Loads this phone's adb key (made once and kept, so pairing is only needed the first time). */
+         @Synchronized
+         private fun ensureKey() {
+             if (keyFile.exists() && certFile.exists()) {
+                 try {
+                     KadbCert.set(certFile.readBytes(), keyFile.readBytes())
+                     return
+                 } catch (e: Exception) {
+                     // Expired or damaged: make a new one (the watch will need pairing again).
+                     paired = false
+                 }
+             }
+             val (cert, key) = KadbCert.get(
+                 cn = "Feynos Music", ou = "Phone", o = "Feynos", l = "Home", st = "Home", c = "US",
+                 notAfter = System.currentTimeMillis() + 10L * 365 * 24 * 3600 * 1000,
+             )
+             certFile.writeBytes(cert)
+             keyFile.writeBytes(key)
+         }
+
+         suspend fun pair(host: String, port: Int, code: String) = withContext(Dispatchers.IO) {
+             ensureKey()
+             Kadb.pair(host, port, code.trim(), "Feynos Music on ${Build.MODEL}")
+             paired = true
+             lastHost = host
+         }
+
+         /** The version of the watch app installed on the watch, or null if it isn't installed. */
+         suspend fun installedVersion(host: String, port: Int): String? = withContext(Dispatchers.IO) {
+             ensureKey()
+             Kadb.create(host, port, connectTimeout = 10_000, socketTimeout = 30_000).use { k ->
+                 val out = k.shell("dumpsys package com.feynos.music | grep versionName").allOutput
+                 Regex("""versionName=(\S+)""").find(out)?.groupValues?.get(1)
+             }
+         }
+
+         data class Release(val version: String, val url: String, val name: String)
+
+         /** The newest watch app on the GitHub releases page. */
+         suspend fun latestRelease(): Release? = withContext(Dispatchers.IO) {
+             val repo = BuildConfig.GITHUB_REPO.ifBlank { "Feynos-Lin/FeynosMusic" }
+             val req = Request.Builder().url("https://api.github.com/repos/$repo/releases?per_page=50")
+                 .header("Accept", "application/vnd.github+json").build()
+             val arr = graph.http.newCall(req).execute().use { r ->
+                 if (!r.isSuccessful) throw Exception("GitHub returned HTTP ${r.code}")
+                 AppJson.parseToJsonElement(r.body?.string().orEmpty()) as? JsonArray
+             } ?: return@withContext null
+             for (el in arr) {
+                 val o = el as? JsonObject ?: continue
+                 val tag = o["tag_name"]?.jsonPrimitive?.content ?: continue
+                 if (!tag.startsWith("wear-v")) continue
+                 val asset = (o["assets"] as? JsonArray)?.mapNotNull { it as? JsonObject }
+                     ?.firstOrNull { it["name"]?.jsonPrimitive?.content?.endsWith(".apk") == true } ?: continue
+                 return@withContext Release(
+                     tag.removePrefix("wear-v"),
+                     asset["browser_download_url"]!!.jsonPrimitive.content,
+                     asset["name"]!!.jsonPrimitive.content,
+                 )
+             }
+             null
+         }
+
+         /** Downloads the newest watch app and installs it on the watch. */
+         suspend fun install(host: String, port: Int, status: (String) -> Unit): String = withContext(Dispatchers.IO) {
+             ensureKey()
+             status("Finding the newest watch app…")
+             val rel = latestRelease() ?: throw Exception("No watch app found on the releases page")
+             status("Downloading ${rel.name}…")
+             val file = File(ctx.cacheDir, "watch.apk")
+             graph.http.newCall(Request.Builder().url(rel.url).build()).execute().use { r ->
+                 if (!r.isSuccessful) throw Exception("Download failed (HTTP ${r.code})")
+                 file.outputStream().use { out -> r.body!!.byteStream().copyTo(out) }
+             }
+             status("Installing on the watch… (this can take a minute)")
+             Kadb.create(host, port, connectTimeout = 15_000, socketTimeout = 180_000).use { k ->
+                 k.install(file, "-r")
+             }
+             file.delete()
+             lastHost = host
+             rel.version
+         }
+
+         // ---------- Finding the watch on the network ----------
+
+         private val nsd by lazy { ctx.getSystemService(Context.NSD_SERVICE) as NsdManager }
+         private val listeners = mutableListOf<NsdManager.DiscoveryListener>()
+
+         /** Looks for watches with wireless debugging on (and ones showing a pairing code). */
+         fun startDiscovery() {
+             stopDiscovery()
+             discover("_adb-tls-pairing._tcp", _pairing)
+             discover("_adb-tls-connect._tcp", _connect)
+         }
+
+         fun stopDiscovery() {
+             listeners.forEach { runCatching { nsd.stopServiceDiscovery(it) } }
+             listeners.clear()
+             _pairing.value = emptyList()
+             _connect.value = emptyList()
+         }
+
+         private fun discover(type: String, into: MutableStateFlow<List<FoundService>>) {
+             val l = object : NsdManager.DiscoveryListener {
+                 override fun onDiscoveryStarted(serviceType: String) {}
+                 override fun onDiscoveryStopped(serviceType: String) {}
+                 override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {}
+                 override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) {}
+                 override fun onServiceLost(info: NsdServiceInfo) {
+                     into.update { list -> list.filterNot { it.name == info.serviceName } }
+                 }
+                 @Suppress("DEPRECATION")
+                 override fun onServiceFound(info: NsdServiceInfo) {
+                     nsd.resolveService(info, object : NsdManager.ResolveListener {
+                         override fun onResolveFailed(i: NsdServiceInfo, errorCode: Int) {}
+                         override fun onServiceResolved(i: NsdServiceInfo) {
+                             val host = i.host?.hostAddress ?: return
+                             if (host.contains(':')) return // skip IPv6
+                             val found = FoundService(i.serviceName, host, i.port)
+                             into.update { list -> list.filterNot { it.name == found.name } + found }
+                         }
+                     })
+                 }
+             }
+             runCatching { nsd.discoverServices(type, NsdManager.PROTOCOL_DNS_SD, l) }.onSuccess { listeners += l }
+         }
+     }
+     FEYNOS_EOF_052
+     cat > 'app/src/main/java/com/feynos/music/wear/WearBridge.kt' <<'FEYNOS_EOF_053'
      package com.feynos.music.wear
 
      import android.content.Context
@@ -4666,8 +4855,8 @@ jobs:
              const val PATH_LIST = "/feynos/list"
          }
      }
-     FEYNOS_EOF_052
-     cat > 'app/src/main/java/com/feynos/music/wear/WearListener.kt' <<'FEYNOS_EOF_053'
+     FEYNOS_EOF_053
+     cat > 'app/src/main/java/com/feynos/music/wear/WearListener.kt' <<'FEYNOS_EOF_054'
      package com.feynos.music.wear
 
      import com.feynos.music.App
@@ -4758,8 +4947,8 @@ jobs:
              runCatching { Wearable.getMessageClient(this).sendMessage(node, WearBridge.PATH_LIST, body.toByteArray()).await() }
          }
      }
-     FEYNOS_EOF_053
-     cat > 'app/src/main/java/com/feynos/music/widget/Widgets.kt' <<'FEYNOS_EOF_054'
+     FEYNOS_EOF_054
+     cat > 'app/src/main/java/com/feynos/music/widget/Widgets.kt' <<'FEYNOS_EOF_055'
      package com.feynos.music.widget
 
      import android.app.PendingIntent
@@ -4882,8 +5071,8 @@ jobs:
              if (cover.isNotEmpty()) mgr.updateAppWidget(cover, build(context, R.layout.widget_cover, CoverWidget::class.java, 200))
          }
      }
-     FEYNOS_EOF_054
-     cat > 'app/src/main/java/com/feynos/music/work/Workers.kt' <<'FEYNOS_EOF_055'
+     FEYNOS_EOF_055
+     cat > 'app/src/main/java/com/feynos/music/work/Workers.kt' <<'FEYNOS_EOF_056'
      package com.feynos.music.work
 
      import android.content.Context
@@ -5028,12 +5217,12 @@ jobs:
              }
          }
      }
-     FEYNOS_EOF_055
+     FEYNOS_EOF_056
 
   - name: Write user interface
     run: |
      mkdir -p "app/src/main/java/com/feynos/music/ui"
-     cat > 'app/src/main/java/com/feynos/music/ui/Components.kt' <<'FEYNOS_EOF_056'
+     cat > 'app/src/main/java/com/feynos/music/ui/Components.kt' <<'FEYNOS_EOF_057'
      @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
      package com.feynos.music.ui
@@ -5507,8 +5696,8 @@ jobs:
              }
          }
      }
-     FEYNOS_EOF_056
-     cat > 'app/src/main/java/com/feynos/music/ui/CoverArtScreens.kt' <<'FEYNOS_EOF_057'
+     FEYNOS_EOF_057
+     cat > 'app/src/main/java/com/feynos/music/ui/CoverArtScreens.kt' <<'FEYNOS_EOF_058'
      @file:OptIn(ExperimentalMaterial3Api::class)
 
      package com.feynos.music.ui
@@ -5703,8 +5892,8 @@ jobs:
              modifier = Modifier.clickable(onClick = onClick),
          )
      }
-     FEYNOS_EOF_057
-     cat > 'app/src/main/java/com/feynos/music/ui/DetailScreens.kt' <<'FEYNOS_EOF_058'
+     FEYNOS_EOF_058
+     cat > 'app/src/main/java/com/feynos/music/ui/DetailScreens.kt' <<'FEYNOS_EOF_059'
      @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
      package com.feynos.music.ui
@@ -6177,8 +6366,8 @@ jobs:
              DownloadsContent()
          }
      }
-     FEYNOS_EOF_058
-     cat > 'app/src/main/java/com/feynos/music/ui/ForYouScreens.kt' <<'FEYNOS_EOF_059'
+     FEYNOS_EOF_059
+     cat > 'app/src/main/java/com/feynos/music/ui/ForYouScreens.kt' <<'FEYNOS_EOF_060'
      @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
      package com.feynos.music.ui
@@ -6582,8 +6771,8 @@ jobs:
              }
          }
      }
-     FEYNOS_EOF_059
-     cat > 'app/src/main/java/com/feynos/music/ui/JamScreen.kt' <<'FEYNOS_EOF_060'
+     FEYNOS_EOF_060
+     cat > 'app/src/main/java/com/feynos/music/ui/JamScreen.kt' <<'FEYNOS_EOF_061'
      @file:OptIn(ExperimentalMaterial3Api::class)
 
      package com.feynos.music.ui
@@ -6806,8 +6995,8 @@ jobs:
              )
          }
      }
-     FEYNOS_EOF_060
-     cat > 'app/src/main/java/com/feynos/music/ui/Layouts.kt' <<'FEYNOS_EOF_061'
+     FEYNOS_EOF_061
+     cat > 'app/src/main/java/com/feynos/music/ui/Layouts.kt' <<'FEYNOS_EOF_062'
      package com.feynos.music.ui
 
      import androidx.compose.foundation.background
@@ -6939,8 +7128,8 @@ jobs:
              }
          }
      }
-     FEYNOS_EOF_061
-     cat > 'app/src/main/java/com/feynos/music/ui/MainScreens.kt' <<'FEYNOS_EOF_062'
+     FEYNOS_EOF_062
+     cat > 'app/src/main/java/com/feynos/music/ui/MainScreens.kt' <<'FEYNOS_EOF_063'
      @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
      package com.feynos.music.ui
@@ -7682,8 +7871,8 @@ jobs:
              dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
          )
      }
-     FEYNOS_EOF_062
-     cat > 'app/src/main/java/com/feynos/music/ui/NowPlaying.kt' <<'FEYNOS_EOF_063'
+     FEYNOS_EOF_063
+     cat > 'app/src/main/java/com/feynos/music/ui/NowPlaying.kt' <<'FEYNOS_EOF_064'
      @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
      package com.feynos.music.ui
@@ -8293,8 +8482,8 @@ jobs:
              }
          }
      }
-     FEYNOS_EOF_063
-     cat > 'app/src/main/java/com/feynos/music/ui/PinsUi.kt' <<'FEYNOS_EOF_064'
+     FEYNOS_EOF_064
+     cat > 'app/src/main/java/com/feynos/music/ui/PinsUi.kt' <<'FEYNOS_EOF_065'
      package com.feynos.music.ui
 
      import androidx.compose.foundation.ExperimentalFoundationApi
@@ -8389,8 +8578,8 @@ jobs:
              }
          }
      }
-     FEYNOS_EOF_064
-     cat > 'app/src/main/java/com/feynos/music/ui/SettingsScreen.kt' <<'FEYNOS_EOF_065'
+     FEYNOS_EOF_065
+     cat > 'app/src/main/java/com/feynos/music/ui/SettingsScreen.kt' <<'FEYNOS_EOF_066'
      @file:OptIn(ExperimentalMaterial3Api::class)
 
      package com.feynos.music.ui
@@ -8589,6 +8778,9 @@ jobs:
                  ThemePicker(current = s.theme, overridden = s.dynamicColor) { id -> set { it.copy(theme = id, dynamicColor = false) } }
                  Toggle(Icons.Rounded.Palette, "Use wallpaper colours", "Material You colours on Android 12+ (replaces the theme)", s.dynamicColor) { v -> set { it.copy(dynamicColor = v) } }
 
+                 Header("Watch")
+                 Item(Icons.Rounded.Watch, "Install or update the watch app", "Wear OS remote for this phone, installed over Wi-Fi") { nav.route("watch") }
+
                  Header("Updates")
                  Toggle(Icons.Rounded.SystemUpdate, "Check for updates on start", "Looks for new releases on GitHub", s.autoUpdate) { v -> set { it.copy(autoUpdate = v) } }
                  Item(Icons.Rounded.Refresh, if (checking) "Checking…" else "Check for updates", "You have version ${BuildConfig.VERSION_NAME}") {
@@ -8744,8 +8936,8 @@ jobs:
              }
          }
      }
-     FEYNOS_EOF_065
-     cat > 'app/src/main/java/com/feynos/music/ui/Shell.kt' <<'FEYNOS_EOF_066'
+     FEYNOS_EOF_066
+     cat > 'app/src/main/java/com/feynos/music/ui/Shell.kt' <<'FEYNOS_EOF_067'
      @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
      package com.feynos.music.ui
@@ -8860,6 +9052,7 @@ jobs:
                                  composable("settings") { SettingsScreen() }
                                  composable("covers") { CoverArtScreen() }
                                  composable("jam") { JamScreen() }
+                                 composable("watch") { WatchScreen() }
                              }
                              SnackbarHost(snack, Modifier.align(Alignment.BottomCenter))
                          }
@@ -9058,8 +9251,8 @@ jobs:
              dismissButton = { TextButton(onClick = onDismiss, enabled = progress == null) { Text("Later") } },
          )
      }
-     FEYNOS_EOF_066
-     cat > 'app/src/main/java/com/feynos/music/ui/Theme.kt' <<'FEYNOS_EOF_067'
+     FEYNOS_EOF_067
+     cat > 'app/src/main/java/com/feynos/music/ui/Theme.kt' <<'FEYNOS_EOF_068'
      package com.feynos.music.ui
 
      import android.os.Build
@@ -9140,8 +9333,8 @@ jobs:
              CompositionLocalProvider(LocalContentColor provides scheme.onBackground, content = content)
          }
      }
-     FEYNOS_EOF_067
-     cat > 'app/src/main/java/com/feynos/music/ui/Visualizer.kt' <<'FEYNOS_EOF_068'
+     FEYNOS_EOF_068
+     cat > 'app/src/main/java/com/feynos/music/ui/Visualizer.kt' <<'FEYNOS_EOF_069'
      package com.feynos.music.ui
 
      import androidx.compose.foundation.Canvas
@@ -9375,7 +9568,181 @@ jobs:
              }
          }
      }
-     FEYNOS_EOF_068
+     FEYNOS_EOF_069
+     cat > 'app/src/main/java/com/feynos/music/ui/WatchScreen.kt' <<'FEYNOS_EOF_070'
+     package com.feynos.music.ui
+
+     import androidx.compose.foundation.layout.*
+     import androidx.compose.foundation.rememberScrollState
+     import androidx.compose.foundation.text.KeyboardOptions
+     import androidx.compose.foundation.verticalScroll
+     import androidx.compose.material.icons.Icons
+     import androidx.compose.material.icons.rounded.*
+     import androidx.compose.material3.*
+     import androidx.compose.runtime.*
+     import androidx.compose.ui.Alignment
+     import androidx.compose.ui.Modifier
+     import androidx.compose.ui.text.font.FontWeight
+     import androidx.compose.ui.text.input.KeyboardType
+     import androidx.compose.ui.unit.dp
+     import androidx.lifecycle.compose.collectAsStateWithLifecycle
+     import kotlinx.coroutines.launch
+
+     /** Settings > Watch: installs and updates the Feynos Music watch app over Wi-Fi. */
+     @Composable
+     fun WatchScreen() {
+         val nav = LocalNavi.current
+         val inst = graph.watchInstaller
+         val scope = rememberCoroutineScope()
+         val pairing by inst.pairing.collectAsStateWithLifecycle()
+         val connect by inst.connect.collectAsStateWithLifecycle()
+         var paired by remember { mutableStateOf(inst.paired) }
+         var busy by remember { mutableStateOf(false) }
+         var status by remember { mutableStateOf<String?>(null) }
+         var error by remember { mutableStateOf<String?>(null) }
+         var latest by remember { mutableStateOf<String?>(null) }
+         var onWatch by remember { mutableStateOf<String?>(null) }
+
+         // Pairing fields (filled in automatically when the watch is found).
+         var pairAddr by remember { mutableStateOf("") }
+         var code by remember { mutableStateOf("") }
+         // Install address (the one on the watch's Wireless debugging screen).
+         var addr by remember { mutableStateOf("") }
+
+         DisposableEffect(Unit) {
+             inst.startDiscovery()
+             onDispose { inst.stopDiscovery() }
+         }
+         LaunchedEffect(Unit) { latest = runCatching { inst.latestRelease()?.version }.getOrNull() }
+         LaunchedEffect(pairing) { pairing.firstOrNull()?.let { if (pairAddr.isBlank()) pairAddr = "${it.host}:${it.port}" } }
+         LaunchedEffect(connect) {
+             val pick = connect.firstOrNull { it.host == inst.lastHost } ?: connect.firstOrNull()
+             if (pick != null && addr.isBlank()) addr = "${pick.host}:${pick.port}"
+         }
+
+         fun split(s: String): Pair<String, Int>? {
+             val t = s.trim()
+             val i = t.lastIndexOf(':')
+             if (i <= 0) return null
+             val port = t.substring(i + 1).toIntOrNull() ?: return null
+             return t.substring(0, i) to port
+         }
+
+         fun doWork(block: suspend () -> Unit) {
+             if (busy) return
+             scope.launch {
+                 busy = true
+                 error = null
+                 try {
+                     block()
+                 } catch (e: Exception) {
+                     error = e.message ?: e.javaClass.simpleName
+                 }
+                 busy = false
+                 status = null
+             }
+         }
+
+         Column(Modifier.fillMaxSize()) {
+             TopBar("Watch app", onBack = { nav.back() })
+             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                 Text(
+                     "Installs Feynos Music on your Wear OS watch (like the OnePlus Watch 2) straight from this phone, over Wi-Fi. " +
+                         "The watch app is a remote for this phone: what's playing, controls, volume, up next and your library.",
+                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                 )
+                 latest?.let { Text("Newest watch app: $it" + (onWatch?.let { w -> " · on your watch: $w" } ?: ""), fontWeight = FontWeight.Bold) }
+
+                 StepCard(1, "Turn on wireless debugging on the watch") {
+                     Text("• Settings › System › About › Versions: tap Build number 7 times.")
+                     Text("• Settings › Developer options: turn on ADB debugging, then Wireless debugging.")
+                     Text("• Make sure the watch and this phone are on the same Wi-Fi.")
+                 }
+
+                 StepCard(2, if (paired) "Pair (done)" else "Pair this phone with the watch") {
+                     if (paired) {
+                         Text("This phone is paired. Pair again only if installing says it isn't allowed.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                     }
+                     Text("On the watch, open Wireless debugging › Pair new device. Enter the code it shows.")
+                     if (pairing.isNotEmpty()) Text("Found: ${pairing.joinToString { "${it.host}:${it.port}" }}", color = MaterialTheme.colorScheme.primary)
+                     OutlinedTextField(pairAddr, { pairAddr = it }, label = { Text("Pairing IP address & port") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                     OutlinedTextField(
+                         code, { code = it.filter(Char::isDigit).take(6) }, label = { Text("6-digit pairing code") }, singleLine = true,
+                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth(),
+                     )
+                     Button(enabled = !busy && code.length == 6 && split(pairAddr) != null, onClick = {
+                         val (h, p) = split(pairAddr)!!
+                         doWork {
+                             status = "Pairing…"
+                             graph.watchInstaller.pair(h, p, code)
+                             paired = true
+                             code = ""
+                             graph.toast("Paired with the watch")
+                         }
+                     }) { Text("Pair") }
+                 }
+
+                 StepCard(3, "Install or update") {
+                     Text("Use the IP address & port shown at the top of the watch's Wireless debugging screen (not the pairing one).")
+                     if (connect.isNotEmpty()) Text("Found: ${connect.joinToString { "${it.host}:${it.port}" }}", color = MaterialTheme.colorScheme.primary)
+                     OutlinedTextField(addr, { addr = it }, label = { Text("Watch IP address & port") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                         Button(enabled = !busy && split(addr) != null, onClick = {
+                             val (h, p) = split(addr)!!
+                             doWork {
+                                 val v = graph.watchInstaller.install(h, p) { status = it }
+                                 onWatch = v
+                                 graph.toast("Watch app $v installed")
+                             }
+                         }) { Text(if (onWatch == null) "Install on watch" else "Update watch app") }
+                         OutlinedButton(enabled = !busy && split(addr) != null, onClick = {
+                             val (h, p) = split(addr)!!
+                             doWork {
+                                 status = "Checking the watch…"
+                                 onWatch = graph.watchInstaller.installedVersion(h, p) ?: "not installed"
+                             }
+                         }) { Text("Check watch") }
+                     }
+                 }
+
+                 if (busy) {
+                     Row(verticalAlignment = Alignment.CenterVertically) {
+                         CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                         Spacer(Modifier.width(12.dp))
+                         Text(status ?: "Working…")
+                     }
+                 }
+                 error?.let { e ->
+                     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
+                         Column(Modifier.padding(12.dp)) {
+                             Text("That didn't work", fontWeight = FontWeight.Bold)
+                             Text(e)
+                             Text(
+                                 "Check that wireless debugging is still on (the watch turns it off when it changes Wi-Fi or restarts), " +
+                                     "that the address matches the watch screen, and try pairing again.",
+                                 style = MaterialTheme.typography.bodySmall,
+                             )
+                         }
+                     }
+                 }
+                 Text(
+                     "When you're done, you can turn ADB debugging off on the watch to save battery. Turn it back on to update.",
+                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                 )
+             }
+         }
+     }
+
+     @Composable
+     private fun StepCard(n: Int, title: String, content: @Composable ColumnScope.() -> Unit) {
+         ElevatedCard(Modifier.fillMaxWidth()) {
+             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                 Text("$n. $title", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                 content()
+             }
+         }
+     }
+     FEYNOS_EOF_070
 
   - name: Set up Java 17
     uses: actions/setup-java@v4
