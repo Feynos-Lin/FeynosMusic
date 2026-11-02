@@ -144,6 +144,9 @@ jobs:
               implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
               implementation("io.coil-kt:coil-compose:2.7.0")
               implementation("com.google.android.gms:play-services-nearby:19.3.0")
+              // Talks to the Feynos Music watch app.
+              implementation("com.google.android.gms:play-services-wearable:18.2.0")
+              implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")
           }
           FEYNOS_EOF_004
           cat > 'app/src/main/AndroidManifest.xml' <<'FEYNOS_EOF_005'
@@ -200,6 +203,16 @@ jobs:
                       android:foregroundServiceType="mediaPlayback">
                       <intent-filter>
                           <action android:name="androidx.media3.session.MediaSessionService" />
+                      </intent-filter>
+                  </service>
+
+                  <!-- Commands from the Feynos Music watch app -->
+                  <service
+                      android:name=".wear.WearListener"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
+                          <data android:scheme="wear" android:host="*" android:pathPrefix="/feynos" />
                       </intent-filter>
                   </service>
 
@@ -570,17 +583,26 @@ jobs:
               </style>
           </resources>
           FEYNOS_EOF_024
-          cat > 'app/src/main/res/xml/file_paths.xml' <<'FEYNOS_EOF_025'
+          cat > 'app/src/main/res/values/wear.xml' <<'FEYNOS_EOF_025'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <!-- Lets the Feynos Music watch app find this phone. -->
+              <string-array name="android_wear_capabilities" translatable="false">
+                  <item>feynos_music_phone</item>
+              </string-array>
+          </resources>
+          FEYNOS_EOF_025
+          cat > 'app/src/main/res/xml/file_paths.xml' <<'FEYNOS_EOF_026'
           <?xml version="1.0" encoding="utf-8"?>
           <paths>
               <cache-path name="updates" path="updates/" />
           </paths>
-          FEYNOS_EOF_025
-          cat > 'app/src/main/res/xml/samsung_cover_widget.xml' <<'FEYNOS_EOF_026'
+          FEYNOS_EOF_026
+          cat > 'app/src/main/res/xml/samsung_cover_widget.xml' <<'FEYNOS_EOF_027'
           <?xml version="1.0" encoding="utf-8"?>
           <samsung-appwidget-provider display="sub_screen" />
-          FEYNOS_EOF_026
-          cat > 'app/src/main/res/xml/widget_cover_info.xml' <<'FEYNOS_EOF_027'
+          FEYNOS_EOF_027
+          cat > 'app/src/main/res/xml/widget_cover_info.xml' <<'FEYNOS_EOF_028'
           <?xml version="1.0" encoding="utf-8"?>
           <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
               android:description="@string/widget_cover_description"
@@ -593,8 +615,8 @@ jobs:
               android:targetCellHeight="2"
               android:updatePeriodMillis="0"
               android:widgetCategory="keyguard|home_screen" />
-          FEYNOS_EOF_027
-          cat > 'app/src/main/res/xml/widget_player_info.xml' <<'FEYNOS_EOF_028'
+          FEYNOS_EOF_028
+          cat > 'app/src/main/res/xml/widget_player_info.xml' <<'FEYNOS_EOF_029'
           <?xml version="1.0" encoding="utf-8"?>
           <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
               android:description="@string/widget_description"
@@ -609,12 +631,12 @@ jobs:
               android:targetCellHeight="1"
               android:updatePeriodMillis="0"
               android:widgetCategory="home_screen" />
-          FEYNOS_EOF_028
+          FEYNOS_EOF_029
 
       - name: Write data layer
         run: |
           mkdir -p "app/src/main/java/com/feynos/music/data" "app/src/main/java/com/feynos/music/util"
-          cat > 'app/src/main/java/com/feynos/music/data/ArtistGroups.kt' <<'FEYNOS_EOF_029'
+          cat > 'app/src/main/java/com/feynos/music/data/ArtistGroups.kt' <<'FEYNOS_EOF_030'
           package com.feynos.music.data
 
           /**
@@ -687,8 +709,8 @@ jobs:
                   return members[artist.id].orEmpty()
               }
           }
-          FEYNOS_EOF_029
-          cat > 'app/src/main/java/com/feynos/music/data/CoverArtFinder.kt' <<'FEYNOS_EOF_030'
+          FEYNOS_EOF_030
+          cat > 'app/src/main/java/com/feynos/music/data/CoverArtFinder.kt' <<'FEYNOS_EOF_031'
           package com.feynos.music.data
 
           import android.content.ContentValues
@@ -1061,8 +1083,8 @@ jobs:
                   val NOISE = Regex("""\b(deluxe|expanded|explicit|clean|remaster(ed)?|anniversary|special|super|edition|version|bonus|tracks?|reissue|complete)\b""", RegexOption.IGNORE_CASE)
               }
           }
-          FEYNOS_EOF_030
-          cat > 'app/src/main/java/com/feynos/music/data/ListenBrainzClient.kt' <<'FEYNOS_EOF_031'
+          FEYNOS_EOF_031
+          cat > 'app/src/main/java/com/feynos/music/data/ListenBrainzClient.kt' <<'FEYNOS_EOF_032'
           package com.feynos.music.data
 
           import android.net.Uri
@@ -1220,8 +1242,8 @@ jobs:
                   return out
               }
           }
-          FEYNOS_EOF_031
-          cat > 'app/src/main/java/com/feynos/music/data/LocalDb.kt' <<'FEYNOS_EOF_032'
+          FEYNOS_EOF_032
+          cat > 'app/src/main/java/com/feynos/music/data/LocalDb.kt' <<'FEYNOS_EOF_033'
           package com.feynos.music.data
 
           import android.content.ContentValues
@@ -1464,8 +1486,8 @@ jobs:
               fun coverOverrides(): Map<String, String> =
                   query("SELECT album_id, url FROM cover_art WHERE url IS NOT NULL") { it.getString(0) to it.getString(1) }.toMap()
           }
-          FEYNOS_EOF_032
-          cat > 'app/src/main/java/com/feynos/music/data/MixGenerator.kt' <<'FEYNOS_EOF_033'
+          FEYNOS_EOF_033
+          cat > 'app/src/main/java/com/feynos/music/data/MixGenerator.kt' <<'FEYNOS_EOF_034'
           package com.feynos.music.data
 
           import com.feynos.music.Graph
@@ -1608,8 +1630,8 @@ jobs:
                   result.size
               }
           }
-          FEYNOS_EOF_033
-          cat > 'app/src/main/java/com/feynos/music/data/Models.kt' <<'FEYNOS_EOF_034'
+          FEYNOS_EOF_034
+          cat > 'app/src/main/java/com/feynos/music/data/Models.kt' <<'FEYNOS_EOF_035'
           package com.feynos.music.data
 
           import kotlinx.serialization.Serializable
@@ -1721,8 +1743,8 @@ jobs:
           )
 
           data class LbPlaylistRef(val mbid: String, val title: String, val date: String?)
-          FEYNOS_EOF_034
-          cat > 'app/src/main/java/com/feynos/music/data/Pins.kt' <<'FEYNOS_EOF_035'
+          FEYNOS_EOF_035
+          cat > 'app/src/main/java/com/feynos/music/data/Pins.kt' <<'FEYNOS_EOF_036'
           package com.feynos.music.data
 
           import android.content.Context
@@ -1784,8 +1806,8 @@ jobs:
                   save(l)
               }
           }
-          FEYNOS_EOF_035
-          cat > 'app/src/main/java/com/feynos/music/data/SettingsStore.kt' <<'FEYNOS_EOF_036'
+          FEYNOS_EOF_036
+          cat > 'app/src/main/java/com/feynos/music/data/SettingsStore.kt' <<'FEYNOS_EOF_037'
           package com.feynos.music.data
 
           import android.content.Context
@@ -1933,8 +1955,8 @@ jobs:
                   p[kAutoCovers] = s.autoCovers
               }
           }
-          FEYNOS_EOF_036
-          cat > 'app/src/main/java/com/feynos/music/data/SubsonicClient.kt' <<'FEYNOS_EOF_037'
+          FEYNOS_EOF_037
+          cat > 'app/src/main/java/com/feynos/music/data/SubsonicClient.kt' <<'FEYNOS_EOF_038'
           package com.feynos.music.data
 
           import com.feynos.music.util.AppJson
@@ -2135,8 +2157,8 @@ jobs:
 
               fun downloadUrl(id: String): String = buildUrl("download", listOf("id" to id))
           }
-          FEYNOS_EOF_037
-          cat > 'app/src/main/java/com/feynos/music/data/TrackMatcher.kt' <<'FEYNOS_EOF_038'
+          FEYNOS_EOF_038
+          cat > 'app/src/main/java/com/feynos/music/data/TrackMatcher.kt' <<'FEYNOS_EOF_039'
           package com.feynos.music.data
 
           import kotlinx.coroutines.CancellationException
@@ -2231,8 +2253,8 @@ jobs:
                   return sc
               }
           }
-          FEYNOS_EOF_038
-          cat > 'app/src/main/java/com/feynos/music/util/Util.kt' <<'FEYNOS_EOF_039'
+          FEYNOS_EOF_039
+          cat > 'app/src/main/java/com/feynos/music/util/Util.kt' <<'FEYNOS_EOF_040'
           package com.feynos.music.util
 
           import kotlinx.serialization.json.Json
@@ -2315,12 +2337,12 @@ jobs:
           /** Navidrome album cover ids look like "al-<albumId>_<hex>". */
           fun albumIdFromCover(coverId: String?): String? =
               coverId?.takeIf { it.startsWith("al-") }?.removePrefix("al-")?.substringBefore('_')?.takeIf { it.isNotBlank() }
-          FEYNOS_EOF_039
+          FEYNOS_EOF_040
 
       - name: Write player, workers and app core
         run: |
-          mkdir -p "app/src/main/java/com/feynos/music" "app/src/main/java/com/feynos/music/jam" "app/src/main/java/com/feynos/music/player" "app/src/main/java/com/feynos/music/update" "app/src/main/java/com/feynos/music/widget" "app/src/main/java/com/feynos/music/work"
-          cat > 'app/src/main/java/com/feynos/music/App.kt' <<'FEYNOS_EOF_040'
+          mkdir -p "app/src/main/java/com/feynos/music" "app/src/main/java/com/feynos/music/jam" "app/src/main/java/com/feynos/music/player" "app/src/main/java/com/feynos/music/update" "app/src/main/java/com/feynos/music/wear" "app/src/main/java/com/feynos/music/widget" "app/src/main/java/com/feynos/music/work"
+          cat > 'app/src/main/java/com/feynos/music/App.kt' <<'FEYNOS_EOF_041'
           package com.feynos.music
 
           import android.app.Application
@@ -2342,8 +2364,8 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_040
-          cat > 'app/src/main/java/com/feynos/music/Graph.kt' <<'FEYNOS_EOF_041'
+          FEYNOS_EOF_041
+          cat > 'app/src/main/java/com/feynos/music/Graph.kt' <<'FEYNOS_EOF_042'
           package com.feynos.music
 
           import android.app.Application
@@ -2407,9 +2429,11 @@ jobs:
               val generatingMixes = MutableStateFlow(false)
 
               val player = PlayerController(app, this)
+              val wear = com.feynos.music.wear.WearBridge(app, this)
 
               fun start() {
                   settings.init(scope)
+                  wear.start()
                   scope.launch(Dispatchers.IO) {
                       downloads.value = db.downloadMap()
                       covers.load()
@@ -2662,8 +2686,8 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_041
-          cat > 'app/src/main/java/com/feynos/music/MainActivity.kt' <<'FEYNOS_EOF_042'
+          FEYNOS_EOF_042
+          cat > 'app/src/main/java/com/feynos/music/MainActivity.kt' <<'FEYNOS_EOF_043'
           package com.feynos.music
 
           import android.Manifest
@@ -2697,8 +2721,8 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_042
-          cat > 'app/src/main/java/com/feynos/music/jam/JamManager.kt' <<'FEYNOS_EOF_043'
+          FEYNOS_EOF_043
+          cat > 'app/src/main/java/com/feynos/music/jam/JamManager.kt' <<'FEYNOS_EOF_044'
           package com.feynos.music.jam
 
           import android.os.Build
@@ -3242,8 +3266,8 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_043
-          cat > 'app/src/main/java/com/feynos/music/jam/JamService.kt' <<'FEYNOS_EOF_044'
+          FEYNOS_EOF_044
+          cat > 'app/src/main/java/com/feynos/music/jam/JamService.kt' <<'FEYNOS_EOF_045'
           package com.feynos.music.jam
 
           import android.app.NotificationChannel
@@ -3366,8 +3390,8 @@ jobs:
                   super.onDestroy()
               }
           }
-          FEYNOS_EOF_044
-          cat > 'app/src/main/java/com/feynos/music/jam/WifiJam.kt' <<'FEYNOS_EOF_045'
+          FEYNOS_EOF_045
+          cat > 'app/src/main/java/com/feynos/music/jam/WifiJam.kt' <<'FEYNOS_EOF_046'
           package com.feynos.music.jam
 
           import android.content.Context
@@ -3564,8 +3588,8 @@ jobs:
                   services.clear()
               }
           }
-          FEYNOS_EOF_045
-          cat > 'app/src/main/java/com/feynos/music/player/MediaItems.kt' <<'FEYNOS_EOF_046'
+          FEYNOS_EOF_046
+          cat > 'app/src/main/java/com/feynos/music/player/MediaItems.kt' <<'FEYNOS_EOF_047'
           package com.feynos.music.player
 
           import android.content.Context
@@ -3644,8 +3668,8 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_046
-          cat > 'app/src/main/java/com/feynos/music/player/PlaybackService.kt' <<'FEYNOS_EOF_047'
+          FEYNOS_EOF_047
+          cat > 'app/src/main/java/com/feynos/music/player/PlaybackService.kt' <<'FEYNOS_EOF_048'
           package com.feynos.music.player
 
           import android.app.PendingIntent
@@ -3895,8 +3919,8 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_047
-          cat > 'app/src/main/java/com/feynos/music/player/PlayerController.kt' <<'FEYNOS_EOF_048'
+          FEYNOS_EOF_048
+          cat > 'app/src/main/java/com/feynos/music/player/PlayerController.kt' <<'FEYNOS_EOF_049'
           package com.feynos.music.player
 
           import android.content.ComponentName
@@ -4269,8 +4293,8 @@ jobs:
                   c.clearMediaItems()
               }
           }
-          FEYNOS_EOF_048
-          cat > 'app/src/main/java/com/feynos/music/player/VisualizerTap.kt' <<'FEYNOS_EOF_049'
+          FEYNOS_EOF_049
+          cat > 'app/src/main/java/com/feynos/music/player/VisualizerTap.kt' <<'FEYNOS_EOF_050'
           package com.feynos.music.player
 
           import androidx.annotation.OptIn
@@ -4418,8 +4442,8 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_049
-          cat > 'app/src/main/java/com/feynos/music/update/Updater.kt' <<'FEYNOS_EOF_050'
+          FEYNOS_EOF_050
+          cat > 'app/src/main/java/com/feynos/music/update/Updater.kt' <<'FEYNOS_EOF_051'
           package com.feynos.music.update
 
           import android.content.Context
@@ -4505,8 +4529,237 @@ jobs:
                   return true
               }
           }
-          FEYNOS_EOF_050
-          cat > 'app/src/main/java/com/feynos/music/widget/Widgets.kt' <<'FEYNOS_EOF_051'
+          FEYNOS_EOF_051
+          cat > 'app/src/main/java/com/feynos/music/wear/WearBridge.kt' <<'FEYNOS_EOF_052'
+          package com.feynos.music.wear
+
+          import android.content.Context
+          import android.graphics.Bitmap
+          import android.graphics.BitmapFactory
+          import android.media.AudioManager
+          import com.feynos.music.Graph
+          import com.feynos.music.data.Song
+          import com.google.android.gms.wearable.Asset
+          import com.google.android.gms.wearable.PutDataMapRequest
+          import com.google.android.gms.wearable.Wearable
+          import kotlinx.coroutines.Dispatchers
+          import kotlinx.coroutines.flow.combine
+          import kotlinx.coroutines.launch
+          import kotlinx.coroutines.tasks.await
+          import kotlinx.coroutines.withContext
+          import kotlinx.serialization.json.JsonArray
+          import kotlinx.serialization.json.JsonObject
+          import kotlinx.serialization.json.JsonPrimitive
+          import okhttp3.Request
+          import java.io.ByteArrayOutputStream
+
+          /**
+           * Keeps the Feynos Music watch app up to date: what's playing, play/pause, shuffle, repeat, like,
+           * volume, up next and the album art, shared over the Wear OS Data Layer. Commands from the watch
+           * arrive in [WearListener]. Does nothing on phones without Wear OS.
+           */
+          class WearBridge(private val ctx: Context, private val graph: Graph) {
+              private val data by lazy { Wearable.getDataClient(ctx) }
+              private val audio by lazy { ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
+              private var lastSig = ""
+              private var lastPos = 0L
+              private var lastAt = 0L
+              private var lastPlaying = false
+              private var coverFor: String? = null
+              private var coverBytes: ByteArray? = null
+              @Volatile var available = true
+
+              fun start() {
+                  graph.scope.launch {
+                      combine(graph.player.state, graph.starOverrides) { ps, _ -> ps }.collect { ps ->
+                          val song = ps.song
+                          val liked = song != null && graph.isStarred(song)
+                          val sig = listOf(
+                              song?.id, ps.isPlaying, ps.buffering, ps.shuffle, ps.repeat, liked, ps.durationMs / 1000,
+                              ps.upNext.take(20).joinToString(",") { "${it.first}:${it.second.id}" },
+                          ).joinToString("|")
+                          // Also send when the position jumps (a seek on the phone).
+                          val now = System.currentTimeMillis()
+                          val expected = if (lastPlaying) lastPos + (now - lastAt) else lastPos
+                          val jumped = kotlin.math.abs(expected - ps.positionMs) > 3000
+                          if (sig != lastSig || jumped) {
+                              lastSig = sig
+                              publish(force = false)
+                          }
+                      }
+                  }
+              }
+
+              /** Sends the current state to the watch now. */
+              fun publish(force: Boolean = true) {
+                  if (!available) return
+                  graph.scope.launch(Dispatchers.IO) {
+                      try {
+                          val ps = graph.player.state.value
+                          val song = ps.song
+                          lastPos = ps.positionMs
+                          lastAt = System.currentTimeMillis()
+                          lastPlaying = ps.isPlaying
+                          val req = PutDataMapRequest.create(PATH_NOW).apply {
+                              val m = dataMap
+                              m.putLong("at", lastAt)
+                              m.putBoolean("has", song != null)
+                              m.putString("id", song?.id ?: "")
+                              m.putString("title", song?.title ?: "")
+                              m.putString("artist", song?.artist ?: "")
+                              m.putString("album", song?.album ?: "")
+                              m.putBoolean("playing", ps.isPlaying)
+                              m.putBoolean("buffering", ps.buffering)
+                              m.putLong("pos", ps.positionMs)
+                              m.putLong("dur", ps.durationMs)
+                              m.putBoolean("shuffle", ps.shuffle)
+                              m.putInt("repeat", ps.repeat)
+                              m.putBoolean("liked", song != null && graph.isStarred(song))
+                              m.putInt("vol", audio.getStreamVolume(AudioManager.STREAM_MUSIC))
+                              m.putInt("volMax", audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC))
+                              m.putBoolean("guest", graph.jam.state.value.role == com.feynos.music.jam.JamRole.GUEST)
+                              m.putString("next", JsonArray(ps.upNext.take(40).map { (i, s) ->
+                                  JsonObject(mapOf("i" to JsonPrimitive(i), "t" to JsonPrimitive(s.title), "a" to JsonPrimitive(s.artist ?: "")))
+                              }).toString())
+                              val cover = song?.let { coverFor(it) }
+                              if (cover != null) m.putAsset("cover", Asset.createFromBytes(cover))
+                              if (force) m.putLong("nonce", System.nanoTime())
+                          }
+                          data.putDataItem(req.asPutDataRequest().setUrgent()).await()
+                      } catch (e: Exception) {
+                          // Wear OS isn't available on this phone: stop trying.
+                          if (e is com.google.android.gms.common.api.ApiException && e.statusCode == 17) available = false
+                      }
+                  }
+              }
+
+              /** Small JPEG of the song's cover for the watch (kept for the current album). */
+              private suspend fun coverFor(song: Song): ByteArray? = withContext(Dispatchers.IO) {
+                  val key = song.albumId ?: song.coverArt ?: return@withContext null
+                  if (key == coverFor) return@withContext coverBytes
+                  val url = graph.covers.urlFor(song.albumId) ?: song.coverArt?.let { graph.api.coverUrl(it, 300) } ?: return@withContext null
+                  val bytes = runCatching {
+                      graph.http.newCall(Request.Builder().url(url).build()).execute().use { r -> if (r.isSuccessful) r.body?.bytes() else null }
+                  }.getOrNull() ?: return@withContext null
+                  val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return@withContext null
+                  val scaled = Bitmap.createScaledBitmap(bmp, 280, 280, true)
+                  val out = ByteArrayOutputStream()
+                  scaled.compress(Bitmap.CompressFormat.JPEG, 82, out)
+                  coverFor = key
+                  coverBytes = out.toByteArray()
+                  coverBytes
+              }
+
+              fun adjustVolume(dir: Int) {
+                  audio.adjustStreamVolume(AudioManager.STREAM_MUSIC, if (dir > 0) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER, 0)
+                  publish()
+              }
+
+              fun setVolume(v: Int) {
+                  audio.setStreamVolume(AudioManager.STREAM_MUSIC, v.coerceIn(0, audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)), 0)
+                  publish()
+              }
+
+              companion object {
+                  const val PATH_NOW = "/feynos/now"
+                  const val PATH_CMD = "/feynos/cmd"
+                  const val PATH_LIST = "/feynos/list"
+              }
+          }
+          FEYNOS_EOF_052
+          cat > 'app/src/main/java/com/feynos/music/wear/WearListener.kt' <<'FEYNOS_EOF_053'
+          package com.feynos.music.wear
+
+          import com.feynos.music.App
+          import com.feynos.music.data.Song
+          import com.feynos.music.util.AppJson
+          import com.google.android.gms.wearable.MessageEvent
+          import com.google.android.gms.wearable.Wearable
+          import com.google.android.gms.wearable.WearableListenerService
+          import kotlinx.coroutines.Dispatchers
+          import kotlinx.coroutines.launch
+          import kotlinx.coroutines.tasks.await
+          import kotlinx.serialization.json.JsonArray
+          import kotlinx.serialization.json.JsonObject
+          import kotlinx.serialization.json.JsonPrimitive
+          import kotlinx.serialization.json.jsonObject
+          import kotlinx.serialization.json.jsonPrimitive
+          import kotlinx.serialization.json.longOrNull
+          import kotlinx.serialization.json.intOrNull
+
+          /** Carries out commands sent from the Feynos Music watch app. Runs even if the phone app is closed. */
+          class WearListener : WearableListenerService() {
+              override fun onMessageReceived(event: MessageEvent) {
+                  if (event.path != WearBridge.PATH_CMD) return
+                  val g = App.graph
+                  val m = runCatching { AppJson.parseToJsonElement(String(event.data)).jsonObject }.getOrNull() ?: return
+                  fun s(k: String) = m[k]?.jsonPrimitive?.content.orEmpty()
+                  fun i(k: String) = m[k]?.jsonPrimitive?.intOrNull ?: 0
+                  g.player.connect()
+                  when (s("op")) {
+                      "hello" -> g.wear.publish()
+                      "toggle" -> g.player.toggle()
+                      "next" -> g.player.next()
+                      "previous" -> g.player.previous()
+                      "seek" -> g.player.seekTo(m["ms"]?.jsonPrimitive?.longOrNull ?: 0)
+                      "skipTo" -> g.player.skipTo(i("i"))
+                      "shuffle" -> g.player.toggleShuffle()
+                      "repeat" -> g.player.cycleRepeat()
+                      "like" -> g.player.state.value.song?.let { g.toggleStar(it) }
+                      "vol" -> g.wear.adjustVolume(i("dir"))
+                      "setVol" -> g.wear.setVolume(i("v"))
+                      "browse" -> g.scope.launch(Dispatchers.IO) { reply(event.sourceNodeId, s("section"), browse(s("section"))) }
+                      "play" -> g.scope.launch(Dispatchers.IO) {
+                          val songs = songsFor(s("kind"), s("id"))
+                          if (songs.isNotEmpty()) g.player.play(songs, shuffle = s("shuffle") == "1" || s("kind") == "shuffle")
+                      }
+                  }
+              }
+
+              private data class Item(val kind: String, val id: String, val title: String, val sub: String)
+
+              /** Lists for the watch's library screens. */
+              private suspend fun browse(section: String): List<Item> {
+                  val g = App.graph
+                  return runCatching {
+                      when (section) {
+                          "pinned" -> g.pins.list.value.map { Item(it.kind, it.id, it.name, it.subtitle) }
+                          "mixes" -> g.db.mixes().map { Item("mix", it.id, it.title, it.description) }
+                          "playlists" -> g.api.playlists().map { Item("playlist", it.id, it.name, "${it.songCount} songs") }
+                          "recent" -> g.api.albumList("recent", 40).map { Item("album", it.id, it.name, it.artist.orEmpty()) }
+                          "newest" -> g.api.albumList("newest", 40).map { Item("album", it.id, it.name, it.artist.orEmpty()) }
+                          "albums" -> g.api.albumList("starred", 60).map { Item("album", it.id, it.name, it.artist.orEmpty()) }
+                          else -> emptyList()
+                      }
+                  }.getOrDefault(emptyList()).take(80)
+              }
+
+              private suspend fun songsFor(kind: String, id: String): List<Song> {
+                  val g = App.graph
+                  return runCatching {
+                      when (kind) {
+                          "album" -> g.api.album(id).song
+                          "playlist" -> g.api.playlist(id).entry
+                          "mix" -> g.db.mixSongs(id)
+                          "liked" -> g.api.starred().song
+                          "shuffle" -> g.api.randomSongs(100)
+                          else -> emptyList()
+                      }
+                  }.getOrDefault(emptyList())
+              }
+
+              private suspend fun reply(node: String, section: String, items: List<Item>) {
+                  val body = JsonObject(mapOf(
+                      "section" to JsonPrimitive(section),
+                      "items" to JsonArray(items.map {
+                          JsonObject(mapOf("k" to JsonPrimitive(it.kind), "id" to JsonPrimitive(it.id), "t" to JsonPrimitive(it.title), "s" to JsonPrimitive(it.sub)))
+                      }),
+                  )).toString()
+                  runCatching { Wearable.getMessageClient(this).sendMessage(node, WearBridge.PATH_LIST, body.toByteArray()).await() }
+              }
+          }
+          FEYNOS_EOF_053
+          cat > 'app/src/main/java/com/feynos/music/widget/Widgets.kt' <<'FEYNOS_EOF_054'
           package com.feynos.music.widget
 
           import android.app.PendingIntent
@@ -4629,8 +4882,8 @@ jobs:
                   if (cover.isNotEmpty()) mgr.updateAppWidget(cover, build(context, R.layout.widget_cover, CoverWidget::class.java, 200))
               }
           }
-          FEYNOS_EOF_051
-          cat > 'app/src/main/java/com/feynos/music/work/Workers.kt' <<'FEYNOS_EOF_052'
+          FEYNOS_EOF_054
+          cat > 'app/src/main/java/com/feynos/music/work/Workers.kt' <<'FEYNOS_EOF_055'
           package com.feynos.music.work
 
           import android.content.Context
@@ -4775,12 +5028,12 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_052
+          FEYNOS_EOF_055
 
       - name: Write user interface
         run: |
           mkdir -p "app/src/main/java/com/feynos/music/ui"
-          cat > 'app/src/main/java/com/feynos/music/ui/Components.kt' <<'FEYNOS_EOF_053'
+          cat > 'app/src/main/java/com/feynos/music/ui/Components.kt' <<'FEYNOS_EOF_056'
           @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
           package com.feynos.music.ui
@@ -5254,8 +5507,8 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_053
-          cat > 'app/src/main/java/com/feynos/music/ui/CoverArtScreens.kt' <<'FEYNOS_EOF_054'
+          FEYNOS_EOF_056
+          cat > 'app/src/main/java/com/feynos/music/ui/CoverArtScreens.kt' <<'FEYNOS_EOF_057'
           @file:OptIn(ExperimentalMaterial3Api::class)
 
           package com.feynos.music.ui
@@ -5450,8 +5703,8 @@ jobs:
                   modifier = Modifier.clickable(onClick = onClick),
               )
           }
-          FEYNOS_EOF_054
-          cat > 'app/src/main/java/com/feynos/music/ui/DetailScreens.kt' <<'FEYNOS_EOF_055'
+          FEYNOS_EOF_057
+          cat > 'app/src/main/java/com/feynos/music/ui/DetailScreens.kt' <<'FEYNOS_EOF_058'
           @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
           package com.feynos.music.ui
@@ -5924,8 +6177,8 @@ jobs:
                   DownloadsContent()
               }
           }
-          FEYNOS_EOF_055
-          cat > 'app/src/main/java/com/feynos/music/ui/ForYouScreens.kt' <<'FEYNOS_EOF_056'
+          FEYNOS_EOF_058
+          cat > 'app/src/main/java/com/feynos/music/ui/ForYouScreens.kt' <<'FEYNOS_EOF_059'
           @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
           package com.feynos.music.ui
@@ -6329,8 +6582,8 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_056
-          cat > 'app/src/main/java/com/feynos/music/ui/JamScreen.kt' <<'FEYNOS_EOF_057'
+          FEYNOS_EOF_059
+          cat > 'app/src/main/java/com/feynos/music/ui/JamScreen.kt' <<'FEYNOS_EOF_060'
           @file:OptIn(ExperimentalMaterial3Api::class)
 
           package com.feynos.music.ui
@@ -6553,8 +6806,8 @@ jobs:
                   )
               }
           }
-          FEYNOS_EOF_057
-          cat > 'app/src/main/java/com/feynos/music/ui/Layouts.kt' <<'FEYNOS_EOF_058'
+          FEYNOS_EOF_060
+          cat > 'app/src/main/java/com/feynos/music/ui/Layouts.kt' <<'FEYNOS_EOF_061'
           package com.feynos.music.ui
 
           import androidx.compose.foundation.background
@@ -6686,8 +6939,8 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_058
-          cat > 'app/src/main/java/com/feynos/music/ui/MainScreens.kt' <<'FEYNOS_EOF_059'
+          FEYNOS_EOF_061
+          cat > 'app/src/main/java/com/feynos/music/ui/MainScreens.kt' <<'FEYNOS_EOF_062'
           @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
           package com.feynos.music.ui
@@ -7429,8 +7682,8 @@ jobs:
                   dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
               )
           }
-          FEYNOS_EOF_059
-          cat > 'app/src/main/java/com/feynos/music/ui/NowPlaying.kt' <<'FEYNOS_EOF_060'
+          FEYNOS_EOF_062
+          cat > 'app/src/main/java/com/feynos/music/ui/NowPlaying.kt' <<'FEYNOS_EOF_063'
           @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
           package com.feynos.music.ui
@@ -8040,8 +8293,8 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_060
-          cat > 'app/src/main/java/com/feynos/music/ui/PinsUi.kt' <<'FEYNOS_EOF_061'
+          FEYNOS_EOF_063
+          cat > 'app/src/main/java/com/feynos/music/ui/PinsUi.kt' <<'FEYNOS_EOF_064'
           package com.feynos.music.ui
 
           import androidx.compose.foundation.ExperimentalFoundationApi
@@ -8136,8 +8389,8 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_061
-          cat > 'app/src/main/java/com/feynos/music/ui/SettingsScreen.kt' <<'FEYNOS_EOF_062'
+          FEYNOS_EOF_064
+          cat > 'app/src/main/java/com/feynos/music/ui/SettingsScreen.kt' <<'FEYNOS_EOF_065'
           @file:OptIn(ExperimentalMaterial3Api::class)
 
           package com.feynos.music.ui
@@ -8491,8 +8744,8 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_062
-          cat > 'app/src/main/java/com/feynos/music/ui/Shell.kt' <<'FEYNOS_EOF_063'
+          FEYNOS_EOF_065
+          cat > 'app/src/main/java/com/feynos/music/ui/Shell.kt' <<'FEYNOS_EOF_066'
           @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
           package com.feynos.music.ui
@@ -8805,8 +9058,8 @@ jobs:
                   dismissButton = { TextButton(onClick = onDismiss, enabled = progress == null) { Text("Later") } },
               )
           }
-          FEYNOS_EOF_063
-          cat > 'app/src/main/java/com/feynos/music/ui/Theme.kt' <<'FEYNOS_EOF_064'
+          FEYNOS_EOF_066
+          cat > 'app/src/main/java/com/feynos/music/ui/Theme.kt' <<'FEYNOS_EOF_067'
           package com.feynos.music.ui
 
           import android.os.Build
@@ -8887,8 +9140,8 @@ jobs:
                   CompositionLocalProvider(LocalContentColor provides scheme.onBackground, content = content)
               }
           }
-          FEYNOS_EOF_064
-          cat > 'app/src/main/java/com/feynos/music/ui/Visualizer.kt' <<'FEYNOS_EOF_065'
+          FEYNOS_EOF_067
+          cat > 'app/src/main/java/com/feynos/music/ui/Visualizer.kt' <<'FEYNOS_EOF_068'
           package com.feynos.music.ui
 
           import androidx.compose.foundation.Canvas
@@ -9122,7 +9375,7 @@ jobs:
                   }
               }
           }
-          FEYNOS_EOF_065
+          FEYNOS_EOF_068
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
