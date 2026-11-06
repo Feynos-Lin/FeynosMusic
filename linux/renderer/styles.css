@@ -270,3 +270,21 @@ body.layout-youtube .chip { border-radius: 8px; }
 .card.pinned .pinctl { position: absolute; top: 14px; right: 14px; display: none; gap: 4px; }
 .card.pinned:hover .pinctl { display: flex; }
 .card.pinned .pinctl .iconbtn { background: #000a; border-radius: 50%; width: 30px; height: 30px; font-size: 15px; color: #fff; }
+
+/* ---------- Glass theme: frosted panels over the blurred album art ---------- */
+#glassbg { position: fixed; inset: 0; z-index: -1; overflow: hidden; background: linear-gradient(135deg, #1b2a55, #2a1b4d 50%, #0e3a4a); }
+#glassbg .art { position: absolute; inset: -120px; background-size: cover; background-position: center; filter: blur(80px) saturate(1.4); opacity: 0.9; transform: scale(1.15); transition: background-image 0.6s; }
+#glassbg .tint { position: absolute; inset: 0; background: radial-gradient(circle at 20% 10%, #b9d4ff22, transparent 50%), linear-gradient(180deg, #00000055, #050812aa); }
+html.glass { background: #0b1020; }
+html.glass body { background: transparent; }
+html.glass .side, html.glass .bar { backdrop-filter: blur(30px) saturate(1.3); border-color: #ffffff1f; }
+html.glass .side { border-right: 1px solid #ffffff14; }
+html.glass .card { backdrop-filter: blur(16px); border: 1px solid #ffffff14; }
+html.glass .card:hover { background: rgba(255, 255, 255, 0.14); }
+html.glass .np-view { background: #0b1020; }
+html.glass .np-view .bg { filter: blur(80px) saturate(1.4) brightness(.6); }
+html.glass .menu { backdrop-filter: blur(24px); border: 1px solid #ffffff1f; }
+html.glass .modal .box { background: rgba(28, 36, 57, 0.88); backdrop-filter: blur(30px); border: 1px solid #ffffff1f; }
+html.glass .toast { background: rgba(255, 255, 255, 0.92); }
+html.glass ::-webkit-scrollbar-thumb { background: #ffffff33; }
+html.glass input, html.glass select { background: rgba(255, 255, 255, 0.08); }

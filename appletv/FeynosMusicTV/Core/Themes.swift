@@ -7,6 +7,8 @@ struct TVTheme: Identifiable {
     let accent: Color
     let background: Color
     let container: Color
+    /// Frosted glass: the playing song's album art, blurred, behind everything.
+    var glass: Bool = false
 
     private static func hex(_ v: UInt32) -> Color {
         Color(red: Double((v >> 16) & 0xFF) / 255, green: Double((v >> 8) & 0xFF) / 255, blue: Double(v & 0xFF) / 255)
@@ -21,7 +23,32 @@ struct TVTheme: Identifiable {
         TVTheme(id: "tidal", name: "Black & cyan (Tidal-style)", accent: hex(0x33FFEE), background: hex(0x000000), container: hex(0x0B3D3A)),
         TVTheme(id: "amazon", name: "Teal (Amazon Music-style)", accent: hex(0x25D1DA), background: hex(0x0B0F12), container: hex(0x0E3B42)),
         TVTheme(id: "deezer", name: "Violet (Deezer-style)", accent: hex(0xA238FF), background: hex(0x0F0D13), container: hex(0x3B1A66)),
+        TVTheme(id: "glass", name: "Glass", accent: hex(0xB9D4FF), background: hex(0x0B1020), container: hex(0x2B3A5C), glass: true),
     ]
 
     static func byId(_ id: String) -> TVTheme { all.first { $0.id == id } ?? all[0] }
+}
+
+/// The Glass theme's backdrop: the playing song's album art, heavily blurred, under a frosted layer.
+struct GlassBackdrop: View {
+    @EnvironmentObject var player: Player
+
+    var body: some View {
+        ZStack {
+            LinearGradient(colors: [Color(red: 0.11, green: 0.16, blue: 0.33), Color(red: 0.16, green: 0.11, blue: 0.30), Color(red: 0.05, green: 0.23, blue: 0.29)],
+                           startPoint: .topLeading, endPoint: .bottomTrailing)
+            if let song = player.current {
+                CoverImage(coverArt: song.coverArt, albumId: song.albumId, size: 400, corner: 0)
+                    .frame(width: 2400, height: 2400)
+                    .blur(radius: 90)
+                    .saturation(1.4)
+                    .opacity(0.9)
+                    .animation(.easeInOut(duration: 0.8), value: song.id)
+            }
+            Rectangle().fill(.ultraThinMaterial).opacity(0.35)
+            LinearGradient(colors: [Color.black.opacity(0.25), Color.black.opacity(0.6)], startPoint: .top, endPoint: .bottom)
+        }
+        .clipped()
+        .ignoresSafeArea()
+    }
 }

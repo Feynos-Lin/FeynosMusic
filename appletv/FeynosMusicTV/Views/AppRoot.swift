@@ -38,8 +38,12 @@ struct RootView: View {
     var body: some View {
         let theme = TVTheme.byId(settings.theme)
         ZStack(alignment: .bottom) {
-            LinearGradient(colors: [theme.container.opacity(0.55), theme.background, theme.background], startPoint: .top, endPoint: .bottom)
-                .ignoresSafeArea()
+            if theme.glass {
+                GlassBackdrop()
+            } else {
+                LinearGradient(colors: [theme.container.opacity(0.55), theme.background, theme.background], startPoint: .top, endPoint: .bottom)
+                    .ignoresSafeArea()
+            }
             if settings.addingProfile || settings.profiles.isEmpty || !settings.loggedIn {
                 LoginView()
             } else if !settings.picked {

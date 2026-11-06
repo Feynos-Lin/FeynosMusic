@@ -7949,12 +7949,17 @@ jobs:
          var showSleep by remember { mutableStateOf(false) }
          val layout = LocalUiLayout.current
 
+         val glass = LocalGlass.current
          Box(
              Modifier.fillMaxSize()
-                 .background(MaterialTheme.colorScheme.background)
-                 .background(Brush.verticalGradient(listOf(bg, lerp(bg, MaterialTheme.colorScheme.background, 0.85f))))
+                 .then(
+                     if (glass) Modifier
+                     else Modifier.background(MaterialTheme.colorScheme.background)
+                         .background(Brush.verticalGradient(listOf(bg, lerp(bg, MaterialTheme.colorScheme.background, 0.85f)))),
+                 )
                  .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {},
          ) {
+             if (glass) GlassBackdrop()
              Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
                  if (!wide && layout == UiLayout.APPLE) Grabber(onClose) else NowPlayingTopBar(song, onClose, onSleep = { showSleep = true })
                  if (!wide && layout == UiLayout.SPOTIFY) {
@@ -9012,6 +9017,7 @@ jobs:
 
          CompositionLocalProvider(LocalNavi provides navi, LocalUiLayout provides layout) {
              Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+                 if (LocalGlass.current) GlassBackdrop()
                  Row(Modifier.fillMaxSize()) {
                      if (wide) {
                          NavigationRail(containerColor = MaterialTheme.colorScheme.surface) {
@@ -9265,6 +9271,19 @@ jobs:
      import androidx.compose.runtime.CompositionLocalProvider
      import androidx.compose.ui.graphics.Color
      import androidx.compose.ui.platform.LocalContext
+     import androidx.compose.foundation.background
+     import androidx.compose.foundation.layout.Box
+     import androidx.compose.foundation.layout.fillMaxSize
+     import androidx.compose.runtime.getValue
+     import androidx.compose.runtime.staticCompositionLocalOf
+     import androidx.compose.ui.Modifier
+     import androidx.compose.ui.draw.alpha
+     import androidx.compose.ui.draw.blur
+     import androidx.compose.ui.draw.scale
+     import androidx.compose.ui.graphics.Brush
+     import androidx.compose.ui.graphics.RectangleShape
+     import androidx.compose.ui.unit.dp
+     import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
      /** A colour theme. The "-style" ones borrow the colour feel of other music apps (no logos or branding). */
      data class AppTheme(
@@ -9276,6 +9295,8 @@ jobs:
          val surface: Long,
          val variant: Long,
          val container: Long,
+         /** Frosted glass: see-through panels over a blurred backdrop of the album art. */
+         val glass: Boolean = false,
      )
 
      val Themes = listOf(
@@ -9287,7 +9308,11 @@ jobs:
          AppTheme("tidal", "Black & cyan (Tidal-style)", 0xFF33FFEE, 0xFF00201D, 0xFF000000, 0xFF0D0D0D, 0xFF242424, 0xFF0B3D3A),
          AppTheme("amazon", "Teal (Amazon Music-style)", 0xFF25D1DA, 0xFF00282A, 0xFF0B0F12, 0xFF12181D, 0xFF232F3E, 0xFF0E3B42),
          AppTheme("deezer", "Violet (Deezer-style)", 0xFFA238FF, 0xFFFFFFFF, 0xFF0F0D13, 0xFF191622, 0xFF2A2533, 0xFF3B1A66),
+         AppTheme("glass", "Glass", 0xFFB9D4FF, 0xFF0A1630, 0xFF1A2236, 0xFF1A2236, 0xFF2A3350, 0xFF2B3A5C, glass = true),
      )
+
+     /** True while the Glass theme is on. */
+     val LocalGlass = staticCompositionLocalOf { false }
 
      fun themeById(id: String): AppTheme = Themes.firstOrNull { it.id == id } ?: Themes[0]
 
@@ -9299,6 +9324,7 @@ jobs:
      )
 
      fun schemeFor(t: AppTheme): ColorScheme {
+         if (t.glass) return glassScheme(Color(t.accent))
          val accent = Color(t.accent)
          val surface = Color(t.surface)
          val variant = Color(t.variant)
@@ -9322,15 +9348,68 @@ jobs:
          )
      }
 
+     /** See-through whites over the blurred backdrop; menus and dialogs stay mostly solid so they're easy to read. */
+     private fun glassScheme(accent: Color) = darkColorScheme(
+         primary = accent,
+         onPrimary = Color(0xFF0A1630),
+         primaryContainer = Color(0x40FFFFFF),
+         onPrimaryContainer = Color.White,
+         secondary = Color(0xFFD9E6FF),
+         onSecondary = Color(0xFF0A1630),
+         background = Color.Transparent,
+         onBackground = Color(0xFFF5F7FF),
+         surface = Color(0x1FFFFFFF),
+         onSurface = Color(0xFFF5F7FF),
+         surfaceVariant = Color(0x2EFFFFFF),
+         onSurfaceVariant = Color(0xCCE6ECFF),
+         surfaceContainerLowest = Color(0xEB141A2A),
+         surfaceContainerLow = Color(0xEB161D2E),
+         surfaceContainer = Color(0xF0182033),
+         surfaceContainerHigh = Color(0xF21C2439),
+         surfaceContainerHighest = Color(0xF5212A42),
+         secondaryContainer = Color(0x40FFFFFF),
+         onSecondaryContainer = Color.White,
+         outline = Color(0x55FFFFFF),
+         outlineVariant = Color(0x33FFFFFF),
+     )
+
+     /**
+      * The Glass theme's backdrop: the playing song's album art, heavily blurred, with soft colour
+      * glows, so the see-through panels look like frosted glass.
+      */
+     @Composable
+     fun GlassBackdrop(modifier: Modifier = Modifier) {
+         val ps by graph.player.state.collectAsStateWithLifecycle()
+         val song = ps.song
+         Box(modifier.fillMaxSize().background(Color(0xFF0B1020))) {
+             Box(
+                 Modifier.fillMaxSize().background(
+                     Brush.linearGradient(listOf(Color(0xFF1B2A55), Color(0xFF2A1B4D), Color(0xFF0E3A4A))),
+                 ),
+             )
+             if (song != null) {
+                 Cover(
+                     song.coverArt, albumId = song.albumId, size = 300, shape = RectangleShape,
+                     modifier = Modifier.fillMaxSize().scale(1.4f)
+                         .then(if (Build.VERSION.SDK_INT >= 31) Modifier.blur(70.dp) else Modifier)
+                         .alpha(if (Build.VERSION.SDK_INT >= 31) 0.85f else 0.35f),
+                 )
+             }
+             Box(Modifier.fillMaxSize().background(Brush.radialGradient(listOf(Color(0x33B9D4FF), Color.Transparent), radius = 900f)))
+             Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0x66000000), Color(0x99050812)))))
+         }
+     }
+
      @Composable
      fun FeynosTheme(dynamic: Boolean, theme: String = "feynos", content: @Composable () -> Unit) {
          val t = themeById(theme)
          val scheme = if (dynamic && Build.VERSION.SDK_INT >= 31) {
              dynamicDarkColorScheme(LocalContext.current).copy(background = AppBackground)
          } else schemeFor(t)
+         val glass = t.glass && !(dynamic && Build.VERSION.SDK_INT >= 31)
          MaterialTheme(colorScheme = scheme) {
              // Sets the default text/icon colour to light-on-dark for the whole app.
-             CompositionLocalProvider(LocalContentColor provides scheme.onBackground, content = content)
+             CompositionLocalProvider(LocalContentColor provides scheme.onBackground, LocalGlass provides glass, content = content)
          }
      }
      FEYNOS_EOF_068

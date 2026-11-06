@@ -551,7 +551,7 @@ const UI = {
       <h2>Cover art</h2><div class="setting"><div class="l"><div>Find missing cover art</div><div class="s">Looks up art on MusicBrainz, Deezer and iTunes</div></div><button class="btn" data-act="nav" data-route="covers">Open</button></div>
       ${sw('autoCovers', 'Fix new albums automatically', 'Checks for missing art when your mixes refresh')}
       <h2>Layout</h2>${LAYOUTS.map((l) => `<div class="setting" data-act="layout" data-id="${l.id}" style="cursor:pointer"><div class="l"><div>${esc(l.name)}</div><div class="s">${esc(l.blurb)}</div></div><div class="radio ${Settings.layout === l.id ? 'on' : ''}"></div></div>`).join('')}
-      <h2>Theme</h2><div class="themes">${THEMES.map((t) => `<div class="theme ${t.id === Settings.theme ? 'on' : ''}" data-act="theme" data-id="${t.id}"><div class="sw" style="background:${t.bg}"><span style="background:${t.accent}"></span></div>${esc(t.name.split(' (')[0])}${t.name.includes('(') ? `<div class="sub">${esc(t.name.split('(')[1].replace(')', ''))}</div>` : ''}</div>`).join('')}</div>
+      <h2>Theme</h2><div class="themes">${THEMES.map((t) => `<div class="theme ${t.id === Settings.theme ? 'on' : ''}" data-act="theme" data-id="${t.id}"><div class="sw" style="background:${t.swatch || t.bg}"><span style="background:${t.accent}"></span></div>${esc(t.name.split(' (')[0])}${t.name.includes('(') ? `<div class="sub">${esc(t.name.split('(')[1].replace(')', ''))}</div>` : ''}</div>`).join('')}</div>
       <h2>Screen</h2>${sw('keepAwake', 'Keep the screen awake', 'Stops the screen from going to sleep while Feynos Music is open')}
       <h2>Updates</h2>${sw('autoUpdate', 'Check for updates on start')}
       <div class="setting"><div class="l"><div>Feynos Music for ${OS_NAME} ${esc(APP_VERSION)}</div></div><button class="btn" data-act="check-update">Check now</button></div></div>`;
@@ -568,6 +568,7 @@ const UI = {
     const sig = this.sig();
     if (sig !== this.lastSig) {
       this.lastSig = sig;
+      updateGlassArt();
       this.renderBar();
       this.markCurrent();
       if (this.npOpen) this.renderNp();

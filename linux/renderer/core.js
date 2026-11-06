@@ -137,6 +137,8 @@ const THEMES = [
   { id: 'tidal', name: 'Black & cyan (Tidal-style)', accent: '#33ffee', on: '#00201d', bg: '#000000', panel: '#0d0d0d', panel2: '#171717', panel3: '#242424', container: '#0b3d3a', side: '#000000' },
   { id: 'amazon', name: 'Teal (Amazon Music-style)', accent: '#25d1da', on: '#00282a', bg: '#0b0f12', panel: '#12181d', panel2: '#19212a', panel3: '#232f3e', container: '#0e3b42', side: '#05080a' },
   { id: 'deezer', name: 'Violet (Deezer-style)', accent: '#a238ff', on: '#ffffff', bg: '#0f0d13', panel: '#191622', panel2: '#201c2b', panel3: '#2a2533', container: '#3b1a66', side: '#09080c' },
+  // Frosted glass: see-through panels over a blurred backdrop of the album art.
+  { id: 'glass', name: 'Glass', accent: '#b9d4ff', on: '#0a1630', bg: 'transparent', panel: 'rgba(255,255,255,0.07)', panel2: 'rgba(255,255,255,0.11)', panel3: 'rgba(28,36,57,0.92)', container: 'rgba(255,255,255,0.22)', side: 'rgba(255,255,255,0.05)', glass: true, swatch: '#1a2236' },
 ];
 
 // Layouts. The "-style" ones follow the structure of other music apps (no logos or branding).
@@ -158,6 +160,31 @@ function applyTheme() {
   r.setProperty('--panel3', t.panel3);
   r.setProperty('--container', t.container);
   r.setProperty('--side', t.side);
+  document.documentElement.classList.toggle('glass', !!t.glass);
+  updateGlassArt();
+}
+
+/** Glass theme: puts the playing song's album art, blurred, behind the whole app. */
+function updateGlassArt() {
+  const on = document.documentElement.classList.contains('glass');
+  let el = document.getElementById('glassbg');
+  if (!on) {
+    if (el) el.remove();
+    return;
+  }
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'glassbg';
+    el.innerHTML = '<div class="art"></div><div class="tint"></div>';
+    document.body.prepend(el);
+  }
+  const s = typeof Player !== 'undefined' && Player.current ? Player.current() : null;
+  const url = s ? artUrl(s.coverArt, s.albumId, 400) : '';
+  const art = el.querySelector('.art');
+  if (art.dataset.url !== (url || '')) {
+    art.dataset.url = url || '';
+    art.style.backgroundImage = url ? `url("${url.replace(/"/g, '%22')}")` : '';
+  }
 }
 
 function saveSettings() {
